@@ -1,4 +1,4 @@
-from flask import current_app, Blueprint, request
+from flask import current_app, request
 from flask.ext.restful import Resource
 import inspect
 import sys
@@ -7,12 +7,6 @@ import urlparse
 from client import Client
 
 client = Client(None,send_oauth2_token=False)
-
-blueprint = Blueprint(
-    'solr',
-    __name__,
-    static_folder=None,
-)
 
 class StatusView(Resource):
   '''Returns the status of this app'''
@@ -33,13 +27,11 @@ class Resources(Resource):
       #If we load this webservice as a module, we can't guarantee that current_app only has these views
       if not hasattr(f,'view_class') or f.view_class not in clsmembers:
         continue
-      print rule.rule
       methods = f.view_class.methods
       scopes = f.view_class.scopes
       rate_limit = f.view_class.rate_limit
       description = f.view_class.__doc__
       func_list[rule.rule] = {'methods':methods,'scopes': scopes,'description': description,'rate_limit':rate_limit}
-    print func_list
     return func_list, 200
 
 class SolrInterface(Resource):

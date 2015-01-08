@@ -1,9 +1,15 @@
 import os
 from flask import Blueprint
 from flask import Flask, g
-from views import blueprint
 from views import StatusView, Resources, Tvrh, Search, Qtree
 from flask.ext.restful import Api
+
+def _create_blueprint_():
+  return Blueprint(
+    'solr',
+    __name__,
+    static_folder=None,
+  )
 
 def create_app(blueprint_only=False):
   app = Flask(__name__, static_folder=None) 
@@ -15,6 +21,7 @@ def create_app(blueprint_only=False):
   except IOError:
     pass
 
+  blueprint = _create_blueprint_()
   api = Api(blueprint)
   api.add_resource(StatusView,'/status')
   api.add_resource(Resources,'/resources')  
