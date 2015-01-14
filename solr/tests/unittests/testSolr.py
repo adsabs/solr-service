@@ -78,23 +78,23 @@ class TestWebservices(TestCase):
     self.assertStatus(r, 200)
     self.assertIn('responseHeader(search)',json.loads(r.data))
 
-  # def test_qtree(self):
-  #   r = self.client.get(url_for('solr.qtree'))
-  #   self.assertStatus(r, 200)
-  #   self.assertIn('foo',json.loads(r.data))
+  def test_qtree(self):
+    r = self.client.get(url_for('solr.qtree'))
+    self.assertStatus(r, 200)
+    self.assertIn('foo',json.loads(r.data))
 
-  #   r = self.client.post(url_for('solr.qtree'))
-  #   self.assertStatus(r, 200)
-  #   self.assertIn('foo',json.loads(r.data))
+    r = self.client.post(url_for('solr.qtree'))
+    self.assertStatus(r, 200)
+    self.assertIn('foo',json.loads(r.data))
       
-  # def test_tvrh(self):
-  #   r = self.client.get(url_for('solr.tvrh'))
-  #   self.assertStatus(r, 200)
-  #   self.assertIn('responseHeader(tvrh)',json.loads(r.data))
+  def test_tvrh(self):
+    r = self.client.get(url_for('solr.tvrh'))
+    self.assertStatus(r, 200)
+    self.assertIn('responseHeader(tvrh)',json.loads(r.data))
 
-  #   r = self.client.post(url_for('solr.tvrh'))
-  #   self.assertStatus(r, 200)
-  #   self.assertIn('responseHeader(tvrh)',json.loads(r.data))
+    r = self.client.post(url_for('solr.tvrh'))
+    self.assertStatus(r, 200)
+    self.assertIn('responseHeader(tvrh)',json.loads(r.data))
 
 if __name__ == '__main__':
   unittest.main()
