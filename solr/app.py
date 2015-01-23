@@ -26,7 +26,7 @@ def create_app(blueprint_only=False):
   api.add_resource(StatusView,'/status')
   api.add_resource(Resources,'/resources')  
   api.add_resource(Tvrh,'/tvrh')
-  api.add_resource(Search,'/search')
+  api.add_resource(Search,'/query')
   api.add_resource(Qtree,'/qtree')
 
 
