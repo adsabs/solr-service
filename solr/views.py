@@ -18,7 +18,7 @@ class StatusView(Resource):
 class Resources(Resource):
   '''Overview of available resources'''
   scopes = []
-  rate_limit = [1000,60*60*24]
+  rate_limit = [100,60*60*24]
   def get(self):
     func_list = {}
     clsmembers = [i[1] for i in inspect.getmembers(sys.modules[__name__], inspect.isclass)]
@@ -68,17 +68,17 @@ class SolrInterface(Resource):
 class Tvrh(SolrInterface):
   '''Exposes the solr term-vector histogram endpoint'''
   scopes = ['ads:default']
-  rate_limit = [100,60*60*24]
+  rate_limit = [500,60*60*24]
   handler = 'SOLR_TVRH_HANDLER'
 
 class Search(SolrInterface):
   '''Exposes the solr select endpoint'''
   scopes = ['ads:default']
-  rate_limit = [100,60*60*24]
+  rate_limit = [500,60*60*24]
   handler = 'SOLR_SEARCH_HANDLER'
 
 class Qtree(SolrInterface):
   '''Exposes the qtree endpoint'''
   scopes = ['ads:default']
-  rate_limit = [100,60*60*24]
+  rate_limit = [500,60*60*24]
   handler = 'SOLR_QTREE_HANDLER'
