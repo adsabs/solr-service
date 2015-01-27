@@ -1,7 +1,7 @@
 import os
 from flask import Blueprint
-from flask import Flask, g
-from views import StatusView, Resources, Tvrh, Search, Qtree
+from flask import Flask, g, make_response, jsonify
+from views import StatusView, Resources, Tvrh, Search, Qtree, BigQuery
 from flask.ext.restful import Api
 
 def _create_blueprint_():
@@ -23,11 +23,27 @@ def create_app(blueprint_only=False):
 
   blueprint = _create_blueprint_()
   api = Api(blueprint)
+  
+  @api.representation('application/json')
+  def json(data, code, headers):
+    """Since we force SOLR to always return JSON, it is faster to 
+    return JSON as text string directly, without parsing and serializing
+    it multiple times"""
+    if not isinstance(data, basestring):
+      resp = jsonify(data)
+      resp.status_code = code
+    else:
+      resp = make_response(data, code)
+    resp.headers['Content-Type'] = 'application/json'
+    resp.headers['Server'] = 'Solr Microservice ' + app.config.get('VERSION')
+    return resp
+            
   api.add_resource(StatusView,'/status')
   api.add_resource(Resources,'/resources')  
   api.add_resource(Tvrh,'/tvrh')
   api.add_resource(Search,'/search')
   api.add_resource(Qtree,'/qtree')
+  api.add_resource(BigQuery,'/bigquery')
 
 
   if blueprint_only:
