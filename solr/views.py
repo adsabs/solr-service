@@ -85,6 +85,7 @@ class Qtree(SolrInterface):
   handler = 'SOLR_QTREE_HANDLER'
   
 class BigQuery(Resource):
+    '''Exposes the bigquery endpoint'''
     scopes = ['ads:bigquery']
     rate_limit = [100, 60*60*24]
     handler = 'SOLR_BIGQUERY_HANDLER'
