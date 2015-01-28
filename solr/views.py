@@ -5,6 +5,7 @@ import sys
 from urllib import urlencode
 import urlparse
 from client import Client
+import json
 
 client = Client(None,send_oauth2_token=False)
 
@@ -39,15 +40,15 @@ class SolrInterface(Resource):
 
   def get(self):
     query = SolrInterface.cleanup_solr_request(dict(request.args))
-    r = client.session.get(current_app.config[self.handler],
-      params=urlencode(query, doseq=True))
-    return r.json()
+    headers = dict(request.headers)
+    headers['Content-Type'] = 'application/x-www-form-urlencoded'
+    r = client.session.post(
+        current_app.config[self.handler],
+        data=query,
+        headers=headers
+        )
+    return r.text, r.status_code, r.headers
 
-  def post(self):
-    query = SolrInterface.cleanup_solr_request(urlparse.parse_qs(request.data))
-    r = client.session.post(current_app.config[self.handler], 
-      data=urlencode(query, doseq=True))
-    return r.json()
 
   @staticmethod
   def cleanup_solr_request(payload,disallowed=['body','full']):
@@ -82,3 +83,39 @@ class Qtree(SolrInterface):
   scopes = ['ads:default']
   rate_limit = [500,60*60*24]
   handler = 'SOLR_QTREE_HANDLER'
+  
+class BigQuery(Resource):
+    '''Exposes the bigquery endpoint'''
+    scopes = ['ads:bigquery']
+    rate_limit = [100, 60*60*24]
+    handler = 'SOLR_BIGQUERY_HANDLER'
+    
+    def post(self):
+        payload = dict(request.form)
+        payload.update(request.args)
+        headers = dict(request.headers)
+        
+        query = SolrInterface.cleanup_solr_request(payload)
+        if 'fq' not in query or len(filter(lambda x: '!bitset' in x, query['fq'])) == 0:
+            return json.dumps({'error': "Missing fq={!bitset}"}), 403
+
+        if 'Content-Type' in headers and not 'big-query' in headers['Content-Type']:
+            headers['Content-Type'] = 'big-query/csv'
+                        
+        if request.data:
+            # r = requests.post('http://localhost:5000/bigquery', params={'q':'*:*', 'wt':'json', 'fl':'bibcode', 'fq': '{!bitset}'}, headers={'content-type': 'big-query/csv'}, data=bibcodes); print r.text
+            r = client.session.post(current_app.config[self.handler],
+              params = query, 
+              data=request.data,
+              headers=headers,
+            )
+        elif request.files:
+            # requests.post('http://localhost:5000/bigquery', data={'q':'*:*', 'wt':'json', 'fl':'bibcode', 'fq': '{!bitset}'}, files={'file': (StringIO('bibcode\n1907AN....174...59.\n1908PA.....16..445.\n1989LNP...334..242S'), 'big-query/csv')})
+            r = client.session.post(current_app.config[self.handler], 
+              params=query,
+              headers=headers,
+              files=request.files
+              )
+        else:
+            return json.dumps({'error': "Wrong request"}), 403
+        return r.text, r.status_code, r.headers
