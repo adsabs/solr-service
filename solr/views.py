@@ -4,10 +4,8 @@ import inspect
 import sys
 from urllib import urlencode
 import urlparse
-from client import Client
 import json
-
-client = Client(None,send_oauth2_token=False)
+import requests
 
 class StatusView(Resource):
   '''Returns the status of this app'''
@@ -42,7 +40,7 @@ class SolrInterface(Resource):
     query = SolrInterface.cleanup_solr_request(dict(request.args))
     headers = dict(request.headers)
     headers['Content-Type'] = 'application/x-www-form-urlencoded'
-    r = client.session.post(
+    r = requests.post(
         current_app.config[self.handler],
         data=query,
         headers=headers
@@ -104,14 +102,14 @@ class BigQuery(Resource):
                         
         if request.data:
             # r = requests.post('http://localhost:5000/bigquery', params={'q':'*:*', 'wt':'json', 'fl':'bibcode', 'fq': '{!bitset}'}, headers={'content-type': 'big-query/csv'}, data=bibcodes); print r.text
-            r = client.session.post(current_app.config[self.handler],
+            r = requests.post(current_app.config[self.handler],
               params = query, 
               data=request.data,
               headers=headers,
             )
         elif request.files:
             # requests.post('http://localhost:5000/bigquery', data={'q':'*:*', 'wt':'json', 'fl':'bibcode', 'fq': '{!bitset}'}, files={'file': (StringIO('bibcode\n1907AN....174...59.\n1908PA.....16..445.\n1989LNP...334..242S'), 'big-query/csv')})
-            r = client.session.post(current_app.config[self.handler], 
+            r = requests.post(current_app.config[self.handler], 
               params=query,
               headers=headers,
               files=request.files
