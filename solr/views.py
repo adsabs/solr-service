@@ -66,25 +66,25 @@ class SolrInterface(Resource):
 
 class Tvrh(SolrInterface):
   '''Exposes the solr term-vector histogram endpoint'''
-  scopes = ['ads:default']
+  scopes = []
   rate_limit = [500,60*60*24]
   handler = 'SOLR_TVRH_HANDLER'
 
 class Search(SolrInterface):
   '''Exposes the solr select endpoint'''
-  scopes = ['ads:default']
+  scopes = []
   rate_limit = [500,60*60*24]
   handler = 'SOLR_SEARCH_HANDLER'
 
 class Qtree(SolrInterface):
   '''Exposes the qtree endpoint'''
-  scopes = ['ads:default']
+  scopes = []
   rate_limit = [500,60*60*24]
   handler = 'SOLR_QTREE_HANDLER'
   
 class BigQuery(Resource):
     '''Exposes the bigquery endpoint'''
-    scopes = ['ads:bigquery']
+    scopes = ['api']
     rate_limit = [100, 60*60*24]
     handler = 'SOLR_BIGQUERY_HANDLER'
     
