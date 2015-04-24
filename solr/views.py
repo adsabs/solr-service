@@ -73,7 +73,7 @@ class Tvrh(SolrInterface):
 class Search(SolrInterface):
   '''Exposes the solr select endpoint'''
   scopes = []
-  rate_limit = [500,60*60*24]
+  rate_limit = [5000,60*60*24]
   handler = 'SOLR_SEARCH_HANDLER'
 
 class Qtree(SolrInterface):
