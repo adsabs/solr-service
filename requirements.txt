@@ -4,3 +4,4 @@ flask-restful
 Flask-Testing
 requests
 httpretty
+flask-discoverer

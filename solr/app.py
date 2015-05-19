@@ -1,6 +1,7 @@
 from flask import Flask, make_response, jsonify
-from views import StatusView, Resources, Tvrh, Search, Qtree, BigQuery
+from views import StatusView, Tvrh, Search, Qtree, BigQuery
 from flask.ext.restful import Api
+from flask.ext.discoverer import Discoverer
 
 
 def create_app():
@@ -34,12 +35,12 @@ def create_app():
         return resp
 
     api.add_resource(StatusView, '/status')
-    api.add_resource(Resources, '/resources')
     api.add_resource(Tvrh, '/tvrh')
     api.add_resource(Search, '/query')
     api.add_resource(Qtree, '/qtree')
     api.add_resource(BigQuery, '/bigquery')
 
+    Discoverer(app)
     return app
 
 if __name__ == "__main__":
