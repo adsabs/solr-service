@@ -44,7 +44,7 @@ class SolrInterface(Resource):
         return cookie if cookie[cookie_name] else None
 
     @staticmethod
-    def cleanup_solr_request(payload, disallowed=['body', 'full']):
+    def cleanup_solr_request(payload):
         """
         Sanitizes a request before it is passed to solr
         :param payload: raw request payload
@@ -58,6 +58,7 @@ class SolrInterface(Resource):
             payload['fl'] = 'id'
         else:
             fields = payload['fl'][0].split(',')
+            disallowed = current_app.config.get('SOLR_SERVICE_DISALLOWED_FIELDS')
             if disallowed:
                 fields = filter(lambda x: x not in disallowed, fields)
             if len(fields) == 0:

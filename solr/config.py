@@ -1,12 +1,8 @@
-# Arbitrary string identifying solr (will be returned in the headers)
 SOLR_SERVICE_VERSION = 'v4.10'
-
 SOLR_SERVICE_URL = 'http://localhost:8983/solr'
-
 SOLR_SERVICE_TVRH_HANDLER = SOLR_SERVICE_URL + '/tvrh'
 SOLR_SERVICE_SEARCH_HANDLER = SOLR_SERVICE_URL + '/select'
 SOLR_SERVICE_QTREE_HANDLER = SOLR_SERVICE_URL + '/qtree'
 SOLR_SERVICE_BIGQUERY_HANDLER = SOLR_SERVICE_URL + '/bigquery'
-
 SOLR_SERVICE_FORWARD_COOKIE_NAME = 'session'
-
+SOLR_SERVICE_DISALLOWED_FIELDS = ['body', 'full', 'readers']
