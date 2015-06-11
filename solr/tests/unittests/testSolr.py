@@ -225,5 +225,17 @@ class TestWebservices(TestCase):
 
         self.assertEqual(resp.status_code, 400)
 
+        resp = self.client.post(
+                url_for('bigquery'),
+                data={
+                    'q': '*:*',
+                    'fl': 'bibcode',
+                    'fq': '{!bitset}',
+                    'bibcode': bibcodes,
+                    }
+        )
+
+        self.assertEqual(resp.status_code, 200)
+
 if __name__ == '__main__':
     unittest.main()
