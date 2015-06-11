@@ -103,7 +103,7 @@ class BigQuery(Resource):
         payload = dict(request.form)
         payload.update(request.args)
         headers = dict(request.headers)
-        
+
         query = SolrInterface.cleanup_solr_request(payload)
         if 'fq' not in query or \
                 len(filter(lambda x: '!bitset' in x, query['fq'])) == 0:
@@ -111,12 +111,13 @@ class BigQuery(Resource):
 
         if 'big-query' not in headers.get('Content-Type', ''):
             headers['Content-Type'] = 'big-query/csv'
-                        
-        if request.data:
+
+        if query.get('bibcode'):
+            bibcodes = ''.join(query.pop('bibcode'))
             r = requests.post(
                 current_app.config[self.handler],
                 params=query,
-                data=request.data,
+                data=bibcodes,
                 headers=headers,
                 cookies=SolrInterface.set_cookies(request),
             )
