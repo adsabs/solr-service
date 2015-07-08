@@ -105,9 +105,16 @@ class BigQuery(Resource):
         headers = dict(request.headers)
         
         query = SolrInterface.cleanup_solr_request(payload)
-        if 'fq' not in query or \
-                len(filter(lambda x: '!bitset' in x, query['fq'])) == 0:
-            return json.dumps({'error': "Missing fq={!bitset}"}), 400
+
+        if request.files and \
+                sum([len(i) for i in request.files.listvalues()]) > 1:
+            return json.dumps(
+                {'error': 'You can only pass one content stream.'}), 400
+
+        if 'fq' not in query:
+            query['fq'] = [u'{!bitset}']
+        elif len(filter(lambda x: '!bitset' in x, query['fq'])) == 0:
+            query['fq'].append(u'{!bitset}')
 
         if 'big-query' not in headers.get('Content-Type', ''):
             headers['Content-Type'] = 'big-query/csv'
