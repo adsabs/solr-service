@@ -101,9 +101,9 @@ class TestWebservices(TestCase):
             r = self.client.get(
                 url_for('search'),
                 query_string={'q': '*', 'rows': 10},
-                headers={'X-Adsws-Ratelimit-Level': '2'}
+                headers={'X-Adsws-Ratelimit-Level': '10'}
             )
-            self.assertEqual(len(r.json['response']['docs']), 4)
+            self.assertEqual(len(r.json['response']['docs']), 7)
 
 
     def test_search(self):

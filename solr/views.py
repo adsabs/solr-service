@@ -52,12 +52,11 @@ class SolrInterface(Resource):
         """
         payload['wt'] = 'json'
         max_rows = current_app.config.get('SOLR_SERVICE_MAX_ROWS', 100)
+        max_rows *= int(
+            request.headers.get('X-Adsws-Ratelimit-Level', 1)
+        )
         if 'rows' in payload and int(payload['rows'][0]) > max_rows:
             payload['rows'] = max_rows
-            if 'X-Adsws-Ratelimit-Level' in request.headers:
-                payload['rows'] *= int(
-                    request.headers['X-Adsws-Ratelimit-Level']
-                )
 
         # we disallow 'return everything'
         if 'fl' not in payload:
