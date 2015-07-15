@@ -9,13 +9,15 @@ import json
 import app
 from werkzeug.security import gen_salt
 from StringIO import StringIO
+from ..mocks import MockSolrResponse
+
 
 class TestWebservices(TestCase):
 
     def create_app(self):
         """Start the wsgi application"""
-        a = app.create_app()
-        return a
+        _ = app.create_app()
+        return _
 
     @httpretty.activate
     def test_cookie_forwarding(self):
@@ -56,58 +58,61 @@ class TestWebservices(TestCase):
             rcookie_value = r.data.split('=')[1]
             self.assertEqual(rcookie_value, cookie_value)
 
-
-    @httpretty.activate
-    def test_sanitization(self):
+    def test_disallowed_fields(self):
         """
-        Tests that fields are properly removed from the query params before
-        being forwarded to solr
+        disallowed fields should be absent from the solr response
         """
 
-        def request_callback(request, uri, headers):
-            if 'fl' not in request.parsed_body:
-                return 503, headers, "{'The query parameters were not passed properly'}"
-            if 'title' not in request.parsed_body['fl']:
-                return 503, headers, "{'The query parameters were not passed properly'}"
-            if 'body' in request.parsed_body['fl']:
-                return 503, headers, "{'The query was not sanitized properly'}"
-            return 200, \
-                   headers, \
-                   "The {0} response from {1}".format(
-                       request.method, uri
-                   )
-
-        httpretty.register_uri(
-            httpretty.POST, self.app.config.get('SOLR_SERVICE_SEARCH_HANDLER'),
-            body=request_callback)
-
-        resp = self.client.get(
+        with MockSolrResponse(self.app.config.get('SOLR_SERVICE_SEARCH_HANDLER')):
+            fl = 'title,id,abstract,{}'.format(
+                ','.join(self.app.config['SOLR_SERVICE_DISALLOWED_FIELDS'])
+            )
+            r = self.client.get(
                 url_for('search'),
-                query_string={'q': 'star', 'fl': 'body,title'},
-        )
-        self.assertEqual(resp.status_code, 200)
+                query_string={'q': 'star', 'fl': fl},
+            )
+            for doc in r.json['response']['docs']:
+                self.assertIn('title', doc)
+                self.assertIn('id', doc)
+                self.assertIn('abstract', doc)
+                for field in self.app.config['SOLR_SERVICE_DISALLOWED_FIELDS']:
+                    self.assertNotIn(field, doc)
 
-    @httpretty.activate
+    def test_set_max_rows(self):
+        """
+        solr should only return up to a default number of documents multiplied
+        by the user's ratelimit-level, if applicable
+        """
+        with MockSolrResponse(self.app.config.get('SOLR_SERVICE_SEARCH_HANDLER')):
+
+            r = self.client.get(
+                url_for('search'),
+                query_string={'q': '*', 'rows': 10}
+            )
+            self.assertEqual(len(r.json['response']['docs']), 7)
+
+            self.app.config['SOLR_SERVICE_MAX_ROWS'] = 2
+            r = self.client.get(
+                url_for('search'),
+                query_string={'q': '*', 'rows': 10}
+            )
+            self.assertEqual(len(r.json['response']['docs']), 2)
+
+            r = self.client.get(
+                url_for('search'),
+                query_string={'q': '*', 'rows': 10},
+                headers={'X-Adsws-Ratelimit-Level': '2'}
+            )
+            self.assertEqual(len(r.json['response']['docs']), 4)
+
+
     def test_search(self):
         """
         Test the search endpoint
         """
-        httpretty.register_uri(
-            httpretty.POST, self.app.config.get('SOLR_SERVICE_SEARCH_HANDLER'),
-            content_type='application/json',
-            status=200,
-            body="""{
-            "responseHeader":{
-            "status":0, "QTime":0,
-            "params":{ "fl":"title,bibcode", "indent":"true", "wt":"json", "q":"*:*"}},
-            "response":{"numFound":10456930,"start":0,"docs":[
-              { "bibcode":"2005JGRC..110.4002G" },
-              { "bibcode":"2005JGRC..110.4003N" },
-              { "bibcode":"2005JGRC..110.4004Y" }]}}""")
-
-        r = self.client.get(url_for('search'))
-        self.assertStatus(r, 200)
-        self.assertIn('responseHeader', r.json)
+        with MockSolrResponse(self.app.config['SOLR_SERVICE_SEARCH_HANDLER']):
+            r = self.client.get(url_for('search'))
+            self.assertIn('responseHeader', r.json)
 
     @httpretty.activate
     def test_qtree(self):

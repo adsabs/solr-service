@@ -48,22 +48,29 @@ class SolrInterface(Resource):
         """
         Sanitizes a request before it is passed to solr
         :param payload: raw request payload
-        :param disallowed: disallowed fields
         :return: sanitized payload
         """
         payload['wt'] = 'json'
+        max_rows = current_app.config.get('SOLR_SERVICE_MAX_ROWS', 100)
+        if 'rows' in payload and int(payload['rows'][0]) > max_rows:
+            payload['rows'] = max_rows
+            if 'X-Adsws-Ratelimit-Level' in request.headers:
+                payload['rows'] *= int(
+                    request.headers['X-Adsws-Ratelimit-Level']
+                )
 
         # we disallow 'return everything'
         if 'fl' not in payload:
             payload['fl'] = 'id'
         else:
             fields = payload['fl'][0].split(',')
-            disallowed = current_app.config.get('SOLR_SERVICE_DISALLOWED_FIELDS')
+            disallowed = current_app.config.get(
+                'SOLR_SERVICE_DISALLOWED_FIELDS'
+            )
             if disallowed:
                 fields = filter(lambda x: x not in disallowed, fields)
             if len(fields) == 0:
                 fields.append('id')
-
             payload['fl'][0] = ','.join(fields)
         return payload
 
