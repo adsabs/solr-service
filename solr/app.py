@@ -32,6 +32,7 @@ def create_app():
         resp.headers['Server'] = 'Solr Microservice {v}'.format(
             v=app.config.get('SOLR_SERVICE_VERSION')
         )
+        resp.headers['Cache-Control'] = "public, max-age=6000"
         return resp
 
     api.add_resource(StatusView, '/status')

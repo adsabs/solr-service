@@ -1,15 +1,9 @@
-import sys
-import os
-PROJECT_HOME = os.path.abspath(
-    os.path.join(os.path.dirname(__file__),'../../')
-)
-sys.path.append(PROJECT_HOME)
 from flask.ext.testing import TestCase
 import unittest
 import app
 
+
 class TestWebservices(TestCase):
-    """Tests that each route returns an http response"""
 
     def create_app(self):
         """Start the wsgi application"""
@@ -35,6 +29,14 @@ class TestWebservices(TestCase):
 
             # Assert every expected_field has the proper type
             [self.assertIsInstance(v[expected_field], _type) for v in r.json.values()]
+
+    def test_headers(self):
+        """
+        Every route should return some hard-coded headers if the incoming
+        request has Content-Type: application/json
+        """
+        r = self.client.get('/status')
+        self.assertEqual(r.headers['Cache-Control'], "public, max-age=6000")
 
 if __name__ == '__main__':
     unittest.main()
