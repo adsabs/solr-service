@@ -58,6 +58,7 @@ class TestWebservices(TestCase):
             rcookie_value = r.data.split('=')[1]
             self.assertEqual(rcookie_value, cookie_value)
 
+
     def test_disallowed_fields(self):
         """
         disallowed fields should be absent from the solr response
@@ -77,6 +78,39 @@ class TestWebservices(TestCase):
                 self.assertIn('abstract', doc)
                 for field in self.app.config['SOLR_SERVICE_DISALLOWED_FIELDS']:
                     self.assertNotIn(field, doc)
+
+
+    def test_cleanup_params(self):
+        """
+        Certain parameters have limits
+        """
+
+        with MockSolrResponse(self.app.config.get('SOLR_SERVICE_SEARCH_HANDLER')):
+            r = self.client.get(
+                url_for('search'),
+                query_string={'q': 'star', 'hl.snippets': 10},
+            )
+            self.assertEqual(r.json['responseHeader']['params']['hl.snippets'], ['4'])
+
+            r = self.client.get(
+                url_for('search'),
+                query_string={'q': 'star', 'hl.snippets': 14, 'hl.full.snippets': 10},
+            )
+            self.assertEqual(r.json['responseHeader']['params']['hl.snippets'], ['4'])
+            self.assertEqual(r.json['responseHeader']['params']['hl.full.snippets'], ['4'])
+
+            r = self.client.get(
+                url_for('search'),
+                query_string={'q': 'star', 'hl.fragsize': '0'},
+            )
+            self.assertEqual(r.json['responseHeader']['params']['hl.fragsize'], ['1'])
+
+            r = self.client.get(
+                url_for('search'),
+                query_string={'q': 'star', 'hl.fragsize': '50'},
+            )
+            self.assertEqual(r.json['responseHeader']['params']['hl.fragsize'], ['50'])
+
 
     def test_set_max_rows(self):
         """
