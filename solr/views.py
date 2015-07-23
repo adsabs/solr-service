@@ -71,6 +71,16 @@ class SolrInterface(Resource):
             if len(fields) == 0:
                 fields.append('id')
             payload['fl'][0] = ','.join(fields)
+        
+        max_hl = current_app.config.get('SOLR_SERVICE_MAX_SNIPPETS', 4)
+        max_frag = current_app.config.get('SOLR_SERVICE_MAX_FRAGSIZE', 100)
+        for k,v in payload.items():
+            if 'hl.' in k:
+                if '.snippets' in k:
+                    payload[k] = max(0, min(int(len(v) and v[0] or max_hl), max_hl))
+                elif '.fragsize' in k:
+                    payload[k] = max(1, min(int(len(v) and v[0] or max_hl), max_frag)) #0 would return whole field
+                
         return payload
 
 

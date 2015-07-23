@@ -1,0 +1,8 @@
+flask-testing
+coveralls
+pep257
+pytest
+pytest-cache
+pytest-cov
+pytest-pep8
+httpretty

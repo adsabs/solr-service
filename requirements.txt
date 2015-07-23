@@ -1,7 +1,5 @@
 werkzeug
 flask
 flask-restful
-Flask-Testing
 requests
-httpretty
 flask-discoverer
