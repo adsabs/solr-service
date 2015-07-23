@@ -8,6 +8,7 @@ import httpretty
 import json
 import app
 from werkzeug.security import gen_salt
+from werkzeug.datastructures import MultiDict
 from StringIO import StringIO
 from ..mocks import MockSolrResponse
 
@@ -218,6 +219,7 @@ class TestWebservices(TestCase):
 
         self.assertEqual(resp.status_code, 200)
 
+        # Missing 'fq' parameter
         resp = self.client.post(
                 url_for('bigquery'),
                 content_type='multipart/form-data',
@@ -228,7 +230,43 @@ class TestWebservices(TestCase):
                     }
         )
 
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue('bitset' in resp.data)
+
+        # 'fq' without bitset
+        resp = self.client.post(
+                url_for('bigquery'),
+                content_type='multipart/form-data',
+                data={
+                    'q': '*:*',
+                    'fl': 'bibcode',
+                    'fq': '{compression = true}',
+                    'file_field': (StringIO(bibcodes), 'big-query/csv'),
+                    }
+        )
+        
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue('compression' in resp.data)
+        self.assertTrue('bitset' in resp.data)
+
+        # We only allow one content stream to be sent
+        data = MultiDict([
+            ('q', '*:*'),
+            ('fl', 'bibcode'),
+            ('fq', '{!bitset}'),
+            ('file_field', (StringIO(bibcodes), 'big-query/csv')),
+            ('file_field', (StringIO(bibcodes), 'big-query/csv')),
+        ])
+
+        resp = self.client.post(
+                url_for('bigquery'),
+                content_type='multipart/form-data',
+                data=data
+        )
+
         self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.json['error'],
+                         'You can only pass one content stream.')
 
 if __name__ == '__main__':
     unittest.main()
