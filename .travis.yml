@@ -2,8 +2,11 @@ language: python
 python:
   - "2.7"
 install:
+  - pip install --upgrade pip
   - pip install -r requirements.txt
   - pip install -r dev-requirements.txt
-  - pip install nose
-script: nosetests
+script:
+  - py.test
+after_success:
+  - "coveralls"
 sudo: false
