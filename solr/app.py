@@ -1,3 +1,5 @@
+
+import logging.config
 from flask import Flask, make_response, jsonify
 from views import StatusView, Tvrh, Search, Qtree, BigQuery
 from flask.ext.restful import Api
@@ -15,7 +17,10 @@ def create_app():
     app.url_map.strict_slashes = False
     Consul(app)  # load_config expects consul to be registered
     load_config(app)
-
+    logging.config.dictConfig(
+        app.config['SOLR_SERVICE_LOGGING']
+    )
+    
     api = Api(app)
 
     @api.representation('application/json')
