@@ -22,7 +22,7 @@ SOLR_SERVICE_LOGGING = {
             'formatter': 'default',
             'level': 'INFO',
             'class': 'logging.handlers.TimedRotatingFileHandler',
-            'filename': '/tmp/solr_service.log',
+            'filename': '/tmp/solr_service_app.log',
         },
         'console': {
             'formatter': 'default',
