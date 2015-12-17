@@ -1,6 +1,6 @@
 werkzeug
 flask
 flask-restful
-requests
+requests==2.8.1
 flask-discoverer
 flask-consulate==0.1.2
