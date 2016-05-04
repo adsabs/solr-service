@@ -36,7 +36,7 @@ class TestWebservices(TestCase):
         request has Content-Type: application/json
         """
         r = self.client.get('/status')
-        self.assertEqual(r.headers['Cache-Control'], "public, max-age=6000")
+        self.assertEqual(r.headers['Cache-Control'], "public, max-age=600")
 
 if __name__ == '__main__':
     unittest.main()
