@@ -11,6 +11,24 @@ from werkzeug.security import gen_salt
 from werkzeug.datastructures import MultiDict
 from StringIO import StringIO
 from ..mocks import MockSolrResponse
+from views import SolrInterface
+
+
+class TestSolrInterface(TestCase):
+
+    def create_app(self):
+        """Start the wsgi application"""
+        a = app.create_app()
+        return a
+
+    def test_cleanup_solr_request(self):
+        """
+        Simple test of the cleanup classmethod
+        """
+        payload = {'fl': ['*,bibcode,title']}
+        cleaned = SolrInterface.cleanup_solr_request(payload)
+
+        self.assertNotIn('*', cleaned['fl'][0])
 
 
 class TestWebservices(TestCase):

@@ -62,7 +62,7 @@ class SolrInterface(Resource):
         if 'fl' not in payload:
             payload['fl'] = 'id'
         else:
-            fields = payload['fl'][0].split(',')
+            fields = [x.strip() for x in payload['fl'][0].split(',')]
             disallowed = current_app.config.get(
                 'SOLR_SERVICE_DISALLOWED_FIELDS'
             )
@@ -70,7 +70,9 @@ class SolrInterface(Resource):
                 fields = filter(lambda x: x not in disallowed, fields)
             if len(fields) == 0:
                 fields.append('id')
-            payload['fl'][0] = ','.join(fields)
+            if '*' in fields:
+                fields = current_app.config.get('SOLR_SERVICE_ALLOWED_FIELDS')
+            payload['fl'] = ','.join(fields)
         
         max_hl = current_app.config.get('SOLR_SERVICE_MAX_SNIPPETS', 4)
         max_frag = current_app.config.get('SOLR_SERVICE_MAX_FRAGSIZE', 100)
