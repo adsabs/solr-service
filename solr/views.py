@@ -70,6 +70,8 @@ class SolrInterface(Resource):
                 fields = filter(lambda x: x not in disallowed, fields)
             if len(fields) == 0:
                 fields.append('id')
+            if '*' in fields:
+                fields = current_app.config.get('SOLR_SERVICE_ALLOWED_FIELDS')
             payload['fl'][0] = ','.join(fields)
         
         max_hl = current_app.config.get('SOLR_SERVICE_MAX_SNIPPETS', 4)

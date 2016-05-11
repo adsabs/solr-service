@@ -8,6 +8,15 @@ SOLR_SERVICE_QTREE_HANDLER = SOLR_SERVICE_URL + '/qtree'
 SOLR_SERVICE_BIGQUERY_HANDLER = SOLR_SERVICE_URL + '/bigquery'
 SOLR_SERVICE_FORWARD_COOKIE_NAME = 'session'
 SOLR_SERVICE_DISALLOWED_FIELDS = ['body', 'full', 'reader']
+SOLR_SERVICE_ALLOWED_FIELDS = [
+    'abstract', 'ack', 'aff', 'alternate_bibcode', 'alternate_title',
+    'arxiv_class', 'author', 'bibcode', 'bibgroup', 'bibstem', 'body',
+    'citation_count', 'copyright', 'data', 'database', 'doctype', 'doi',
+    'first_author', 'grant', 'id', 'identifier', 'indexstamp', 'issue',
+    'keyword', 'lang', 'orcid_other', 'orcid_pub', 'orcid_user', 'page',
+    'property', 'pub', 'pubdate', 'read_count', 'title', 'vizier', 'volume',
+    'year'
+]
 
 SOLR_SERVICE_LOGGING = {
     'version': 1,
