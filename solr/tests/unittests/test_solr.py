@@ -28,7 +28,7 @@ class TestSolrInterface(TestCase):
         payload = {'fl': ['*,bibcode,title']}
         cleaned = SolrInterface.cleanup_solr_request(payload)
 
-        self.assertNotIn('*', cleaned['fl'][0])
+        self.assertNotIn('*', cleaned['fl'])
 
 
 class TestWebservices(TestCase):
