@@ -25,9 +25,20 @@ class TestSolrInterface(TestCase):
         """
         Simple test of the cleanup classmethod
         """
-        payload = {'fl': ['*,bibcode,title']}
+        payload = {'fl': ['id,bibcode,title,volume']}
         cleaned = SolrInterface.cleanup_solr_request(payload)
+        self.assertEqual(cleaned['fl'], 'id,bibcode,title,volume')
 
+        payload = {'fl': ['id ', ' bibcode ', 'title ', ' volume']}
+        cleaned = SolrInterface.cleanup_solr_request(payload)
+        self.assertEqual(cleaned['fl'], 'id,bibcode,title,volume')
+
+        payload = {'fl': ['id', 'bibcode', '*']}
+        cleaned = SolrInterface.cleanup_solr_request(payload)
+        self.assertNotIn('*', cleaned['fl'])
+
+        payload = {'fl': ['id,bibcode,*']}
+        cleaned = SolrInterface.cleanup_solr_request(payload)
         self.assertNotIn('*', cleaned['fl'])
 
 
