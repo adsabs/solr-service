@@ -12,15 +12,26 @@ from werkzeug.datastructures import MultiDict
 from StringIO import StringIO
 from ..mocks import MockSolrResponse
 from views import SolrInterface
-
+from models import Limits, db
 
 class TestSolrInterface(TestCase):
 
     def create_app(self):
         """Start the wsgi application"""
-        a = app.create_app()
+        a = app.create_app(**{
+               'SQLALCHEMY_BINDS': {'solr_service': 'sqlite:///'},
+               'SQLALCHEMY_ECHO': True,
+               'TESTING': True,
+               'PROPAGATE_EXCEPTIONS': True,
+               'TRAP_BAD_REQUEST_ERRORS': True,
+               'SOLR_SERVICE_DISALLOWED_FIELDS': ['full', 'bar']
+            })
         return a
 
+    def setUp(self):
+        db.create_all(app=self.app, bind=['solr_service'])
+
+        
     def test_cleanup_solr_request(self):
         """
         Simple test of the cleanup classmethod
@@ -41,7 +52,21 @@ class TestSolrInterface(TestCase):
         cleaned = SolrInterface.cleanup_solr_request(payload)
         self.assertNotIn('*', cleaned['fl'])
 
-
+        
+    def test_limits(self):
+        """
+        Prevent users from getting certain data
+        """
+        db.session.add(Limits(uid='9', field='full', filter='bibstem:apj'))
+        db.session.commit()
+        assert len(db.session.query(Limits).filter_by(uid='9').all()) == 1
+        
+        payload = {'fl': ['id,bibcode,title,full,bar'], 'q': '*:*'}
+        cleaned = SolrInterface.cleanup_solr_request(payload, user_id='9')
+        self.assertEqual(cleaned['fl'], u'id,bibcode,title,full')
+        self.assertEqual(cleaned['fq'], [u'bibstem:apj'])
+        
+    
 class TestWebservices(TestCase):
 
     def create_app(self):
@@ -331,5 +356,6 @@ class TestWebservices(TestCase):
         self.assertEqual(resp.json['error'],
                          'You can only pass one content stream.')
 
+    
 if __name__ == '__main__':
     unittest.main()
