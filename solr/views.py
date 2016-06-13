@@ -55,7 +55,6 @@ class SolrInterface(Resource):
         :param user_id: string, user id as known to ADS API
         :param protected_fields: list of strings, fields
         """
-        filters = set()
         fl = payload.get('fl', 'id')
         fq = payload.get('fq', [])
         if not isinstance(fq, list):
@@ -90,7 +89,7 @@ class SolrInterface(Resource):
         else:
             fields = []
             for y in payload['fl']:
-                fields.extend([i.strip() for i in y.split(',')])
+                fields.extend([i.strip().lower() for i in y.split(',')])
 
             disallowed = current_app.config.get(
                 'SOLR_SERVICE_DISALLOWED_FIELDS'

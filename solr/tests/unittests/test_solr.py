@@ -59,14 +59,30 @@ class TestSolrInterface(TestCase):
         """
         db.session.add(Limits(uid='9', field='full', filter='bibstem:apj'))
         db.session.commit()
-        assert len(db.session.query(Limits).filter_by(uid='9').all()) == 1
+        self.assertTrue(len(db.session.query(Limits).filter_by(uid='9').all()) == 1)
         
         payload = {'fl': ['id,bibcode,title,full,bar'], 'q': '*:*'}
         cleaned = SolrInterface.cleanup_solr_request(payload, user_id='9')
         self.assertEqual(cleaned['fl'], u'id,bibcode,title,full')
         self.assertEqual(cleaned['fq'], [u'bibstem:apj'])
-        
-    
+
+        cleaned = SolrInterface.cleanup_solr_request(
+            {'fl': ['id,bibcode,full'], 'fq': ['*:*']},
+            user_id='9')
+        self.assertEqual(cleaned['fl'], u'id,bibcode,full')
+        self.assertEqual(cleaned['fq'], ['*:*', u'bibstem:apj'])
+
+        # multiple entries for the user
+        db.session.add(Limits(uid='9', field='bar', filter='bibstem:apr'))
+        db.session.commit()
+
+        cleaned = SolrInterface.cleanup_solr_request(
+            {'fl': ['id,bibcode,fuLL,BAR'], 'fq': ['*:*']},
+            user_id='9')
+        self.assertEqual(cleaned['fl'], u'id,bibcode,full,bar')
+        self.assertEqual(cleaned['fq'], ['*:*', u'bibstem:apj', u'bibstem:apr'])
+
+
 class TestWebservices(TestCase):
 
     def create_app(self):
