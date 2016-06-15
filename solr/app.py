@@ -1,13 +1,15 @@
 
 import logging.config
 from flask import Flask, make_response, jsonify
-from views import StatusView, Tvrh, Search, Qtree, BigQuery
 from flask.ext.restful import Api
 from flask.ext.discoverer import Discoverer
 from flask.ext.consulate import Consul, ConsulConnectionError
+from flask.ext.sqlalchemy import SQLAlchemy
+from views import StatusView, Tvrh, Search, Qtree, BigQuery
 
+db = SQLAlchemy()
 
-def create_app():
+def create_app(**config):
     """
     Application factory
     :return configured flask.Flask application instance
@@ -17,9 +19,36 @@ def create_app():
     app.url_map.strict_slashes = False
     Consul(app)  # load_config expects consul to be registered
     load_config(app)
+    if config:
+        app.config.update(config)
+        
+    db.init_app(app)
     logging.config.dictConfig(
         app.config['SOLR_SERVICE_LOGGING']
     )
+    
+    ## pysqlite driver breaks transactions, we have to apply some hacks as per
+    ## http://docs.sqlalchemy.org/en/rel_0_9/dialects/sqlite.html#pysqlite-serializable
+    
+    if 'sqlite' in (app.config.get('SQLALCHEMY_BINDS') or {'solr_service':''})['solr_service']:
+        from sqlalchemy import event
+        
+        binds = app.config.get('SQLALCHEMY_BINDS')
+        if binds and 'solr_service' in binds:
+            engine = db.get_engine(app, bind=(app.config.get('SQLALCHEMY_BINDS') and 'solr_service'))
+        else:
+            engine = db.get_engine(app)
+        
+        @event.listens_for(engine, "connect")
+        def do_connect(dbapi_connection, connection_record):
+            # disable pysqlite's emitting of the BEGIN statement entirely.
+            # also stops it from emitting COMMIT before any DDL.
+            dbapi_connection.isolation_level = None
+
+        @event.listens_for(engine, "begin")
+        def do_begin(conn):
+            # emit our own BEGIN
+            conn.execute("BEGIN")
     
     api = Api(app)
 

@@ -8,6 +8,10 @@ SOLR_SERVICE_QTREE_HANDLER = SOLR_SERVICE_URL + '/qtree'
 SOLR_SERVICE_BIGQUERY_HANDLER = SOLR_SERVICE_URL + '/bigquery'
 SOLR_SERVICE_FORWARD_COOKIE_NAME = 'session'
 SOLR_SERVICE_DISALLOWED_FIELDS = ['body', 'full', 'reader']
+SQLALCHEMY_TRACK_MODIFICATIONS = False
+SQLALCHEMY_BINDS = {
+    'solr_service':        'sqlite:///'
+}
 SOLR_SERVICE_ALLOWED_FIELDS = [
     'abstract', 'ack', 'aff', 'alternate_bibcode', 'alternate_title',
     'arxiv_class', 'author', 'bibcode', 'bibgroup', 'bibstem',
