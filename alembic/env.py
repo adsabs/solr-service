@@ -47,7 +47,7 @@ def get_app_config(key):
     if opath not in sys.path:
         sys.path.insert(0, opath)
         
-    from orcid_service import app as application
+    from solr import app as application
     app = application.create_app()
     
     with app.app_context() as c:
@@ -63,7 +63,7 @@ def run_migrations_online():
     """
     cfg = config.get_section(config.config_ini_section)
     if 'use_flask_db_url' in cfg and cfg['use_flask_db_url'] == 'true':
-        cfg['sqlalchemy.url'] = get_app_config('SQLALCHEMY_BINDS')['orcid']
+        cfg['sqlalchemy.url'] = get_app_config('SQLALCHEMY_BINDS')['solr_service']
     
     
     engine = engine_from_config(
