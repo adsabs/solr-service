@@ -20,7 +20,7 @@ class SolrInterface(Resource):
     """Base class that responsible for forwarding a query to Solr"""
 
     def get(self):
-        query = SolrInterface.cleanup_solr_request(dict(request.args), request.headers.get('X-Adsws-Uid', 'default'))
+        query = self.cleanup_solr_request(dict(request.args), request.headers.get('X-Adsws-Uid', 'default'))
         headers = dict()
         headers['Content-Type'] = 'application/x-www-form-urlencoded'
         r = requests.post(
@@ -44,8 +44,7 @@ class SolrInterface(Resource):
         cookie = {cookie_name: request.cookies.get(cookie_name, 'session')}
         return cookie if cookie[cookie_name] else None
     
-    @staticmethod
-    def apply_protective_filters(payload, user_id, protected_fields):
+    def apply_protective_filters(self, payload, user_id, protected_fields):
         """
         Adds filters to the query that should limit results to conditions
         that are associted with the user_id+protected_field. If a field is
@@ -66,10 +65,10 @@ class SolrInterface(Resource):
                 fl = u'{0},{1}'.format(fl, f.field)
                 fq.append(unicode(f.filter))
                 payload['fl'] = fl
+        db.session.commit()
             
     
-    @staticmethod
-    def cleanup_solr_request(payload, user_id='default'):
+    def cleanup_solr_request(self, payload, user_id='default'):
         """
         Sanitizes a request before it is passed to solr
         :param payload: raw request payload
@@ -107,7 +106,7 @@ class SolrInterface(Resource):
             payload['fl'] = ','.join(fields)
             
             if len(protected_fields) > 0:
-                SolrInterface.apply_protective_filters(payload, user_id, protected_fields)
+                self.apply_protective_filters(payload, user_id, protected_fields)
 
         max_hl = current_app.config.get('SOLR_SERVICE_MAX_SNIPPETS', 4)
         max_frag = current_app.config.get('SOLR_SERVICE_MAX_FRAGSIZE', 100)
@@ -145,7 +144,7 @@ class Qtree(SolrInterface):
     handler = 'SOLR_SERVICE_QTREE_HANDLER'
 
 
-class BigQuery(Resource):
+class BigQuery(SolrInterface):
     """Exposes the bigquery endpoint"""
     scopes = ['api']
     rate_limit = [100, 60*60*24]
@@ -157,7 +156,7 @@ class BigQuery(Resource):
         payload.update(request.args)
         headers = dict(request.headers)
         
-        query = SolrInterface.cleanup_solr_request(payload, headers.get('X-Adsws-Uid', 'default'))
+        query = self.cleanup_solr_request(payload, headers.get('X-Adsws-Uid', 'default'))
 
         if request.files and \
                 sum([len(i) for i in request.files.listvalues()]) > 1:

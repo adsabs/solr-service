@@ -36,20 +36,21 @@ class TestSolrInterface(TestCase):
         """
         Simple test of the cleanup classmethod
         """
+        si = SolrInterface()
         payload = {'fl': ['id,bibcode,title,volume']}
-        cleaned = SolrInterface.cleanup_solr_request(payload)
+        cleaned = si.cleanup_solr_request(payload)
         self.assertEqual(cleaned['fl'], 'id,bibcode,title,volume')
 
         payload = {'fl': ['id ', ' bibcode ', 'title ', ' volume']}
-        cleaned = SolrInterface.cleanup_solr_request(payload)
+        cleaned = si.cleanup_solr_request(payload)
         self.assertEqual(cleaned['fl'], 'id,bibcode,title,volume')
 
         payload = {'fl': ['id', 'bibcode', '*']}
-        cleaned = SolrInterface.cleanup_solr_request(payload)
+        cleaned = si.cleanup_solr_request(payload)
         self.assertNotIn('*', cleaned['fl'])
 
         payload = {'fl': ['id,bibcode,*']}
-        cleaned = SolrInterface.cleanup_solr_request(payload)
+        cleaned = si.cleanup_solr_request(payload)
         self.assertNotIn('*', cleaned['fl'])
 
         
@@ -57,16 +58,17 @@ class TestSolrInterface(TestCase):
         """
         Prevent users from getting certain data
         """
+        si = SolrInterface()
         db.session.add(Limits(uid='9', field='full', filter='bibstem:apj'))
         db.session.commit()
         self.assertTrue(len(db.session.query(Limits).filter_by(uid='9').all()) == 1)
         
         payload = {'fl': ['id,bibcode,title,full,bar'], 'q': '*:*'}
-        cleaned = SolrInterface.cleanup_solr_request(payload, user_id='9')
+        cleaned = si.cleanup_solr_request(payload, user_id='9')
         self.assertEqual(cleaned['fl'], u'id,bibcode,title,full')
         self.assertEqual(cleaned['fq'], [u'bibstem:apj'])
 
-        cleaned = SolrInterface.cleanup_solr_request(
+        cleaned = si.cleanup_solr_request(
             {'fl': ['id,bibcode,full'], 'fq': ['*:*']},
             user_id='9')
         self.assertEqual(cleaned['fl'], u'id,bibcode,full')
@@ -76,7 +78,7 @@ class TestSolrInterface(TestCase):
         db.session.add(Limits(uid='9', field='bar', filter='bibstem:apr'))
         db.session.commit()
 
-        cleaned = SolrInterface.cleanup_solr_request(
+        cleaned = si.cleanup_solr_request(
             {'fl': ['id,bibcode,fuLL,BAR'], 'fq': ['*:*']},
             user_id='9')
         self.assertEqual(cleaned['fl'], u'id,bibcode,full,bar')
