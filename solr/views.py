@@ -3,7 +3,7 @@ from flask.ext.restful import Resource
 from flask.ext.discoverer import advertise
 import json
 import requests
-from models import Limits, db
+from models import Limits
 from sqlalchemy import or_
 
 class StatusView(Resource):
@@ -43,13 +43,13 @@ class SolrInterface(Resource):
         cookie_name = current_app.config.get('SOLR_SERVICE_FORWARD_COOKIE_NAME')
         cookie = {cookie_name: request.cookies.get(cookie_name, 'session')}
         return cookie if cookie[cookie_name] else None
-    
+
     def apply_protective_filters(self, payload, user_id, protected_fields):
         """
         Adds filters to the query that should limit results to conditions
         that are associted with the user_id+protected_field. If a field is
         not found in the db of limits, it will not be returned to the user
-        
+
         :param payload: raw request payload
         :param user_id: string, user id as known to ADS API
         :param protected_fields: list of strings, fields
@@ -59,15 +59,16 @@ class SolrInterface(Resource):
         if not isinstance(fq, list):
             fq = [fq]
         payload['fq'] = fq
-        
-        for f in db.session.query(Limits).filter(Limits.uid==user_id, or_(Limits.field==x for x in protected_fields)).all():
-            if f.filter:
-                fl = u'{0},{1}'.format(fl, f.field)
-                fq.append(unicode(f.filter))
-                payload['fl'] = fl
-        db.session.commit()
-            
-    
+
+        with current_app.session_scope() as session:
+            for f in session.query(Limits).filter(Limits.uid==user_id, or_(Limits.field==x for x in protected_fields)).all():
+                if f.filter:
+                    fl = u'{0},{1}'.format(fl, f.field)
+                    fq.append(unicode(f.filter))
+                    payload['fl'] = fl
+            session.commit()
+
+
     def cleanup_solr_request(self, payload, user_id='default'):
         """
         Sanitizes a request before it is passed to solr
@@ -93,18 +94,18 @@ class SolrInterface(Resource):
             disallowed = current_app.config.get(
                 'SOLR_SERVICE_DISALLOWED_FIELDS'
             )
-            
+
             protected_fields = []
             if disallowed:
                 protected_fields = filter(lambda x: x in disallowed, fields)
                 fields = filter(lambda x: x not in disallowed, fields)
-                
+
             if len(fields) == 0:
                 fields.append('id')
             if '*' in fields:
                 fields = current_app.config.get('SOLR_SERVICE_ALLOWED_FIELDS')
             payload['fl'] = ','.join(fields)
-            
+
             if len(protected_fields) > 0:
                 self.apply_protective_filters(payload, user_id, protected_fields)
 
@@ -116,7 +117,7 @@ class SolrInterface(Resource):
                     payload[k] = max(0, min(int(len(v) and v[0] or max_hl), max_hl))
                 elif '.fragsize' in k:
                     payload[k] = max(1, min(int(len(v) and v[0] or max_hl), max_frag)) #0 would return whole field
-                
+
         return payload
 
 
@@ -150,12 +151,12 @@ class BigQuery(SolrInterface):
     rate_limit = [100, 60*60*24]
     decorators = [advertise('scopes', 'rate_limit')]
     handler = 'SOLR_SERVICE_BIGQUERY_HANDLER'
-    
+
     def post(self):
         payload = dict(request.form)
         payload.update(request.args)
         headers = dict(request.headers)
-        
+
         query = self.cleanup_solr_request(payload, headers.get('X-Adsws-Uid', 'default'))
 
         if request.files and \
@@ -170,7 +171,7 @@ class BigQuery(SolrInterface):
 
         if 'big-query' not in headers.get('Content-Type', ''):
             headers['Content-Type'] = 'big-query/csv'
-                        
+
         if request.data:
             r = requests.post(
                 current_app.config[self.handler],
