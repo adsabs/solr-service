@@ -45,7 +45,7 @@ class MockSolrResponse(HTTPrettyMock):
             """
 
             resp = json.loads(example_solr_response)
-            
+
             resp['responseHeader'] = {'params': request.parsed_body}
 
             # Mimic the start, rows behaviour
@@ -67,7 +67,7 @@ class MockSolrResponse(HTTPrettyMock):
                 {field: doc.get(field) for field in fl}
                 for doc in resp['response']['docs']
             ]
-            
+
             return 200, headers, json.dumps(resp)
 
         HTTPretty.register_uri(

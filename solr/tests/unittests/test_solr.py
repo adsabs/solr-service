@@ -12,26 +12,30 @@ from werkzeug.datastructures import MultiDict
 from StringIO import StringIO
 from ..mocks import MockSolrResponse
 from views import SolrInterface
-from models import Limits, db
+from models import Limits, Base
 
 class TestSolrInterface(TestCase):
 
     def create_app(self):
         """Start the wsgi application"""
         a = app.create_app(**{
-               'SQLALCHEMY_BINDS': {'solr_service': 'sqlite:///'},
+               'SQLALCHEMY_DATABASE_URI': 'sqlite://',
                'SQLALCHEMY_ECHO': True,
                'TESTING': True,
                'PROPAGATE_EXCEPTIONS': True,
                'TRAP_BAD_REQUEST_ERRORS': True,
                'SOLR_SERVICE_DISALLOWED_FIELDS': ['full', 'bar']
             })
+        Base.query = a.db.session.query_property()
         return a
 
     def setUp(self):
-        db.create_all(app=self.app, bind=['solr_service'])
+        Base.metadata.create_all(bind=self.app.db.engine)
 
-        
+    def tearDown(self):
+        self.app.db.session.remove()
+        self.app.db.drop_all()
+
     def test_cleanup_solr_request(self):
         """
         Simple test of the cleanup classmethod
@@ -53,16 +57,17 @@ class TestSolrInterface(TestCase):
         cleaned = si.cleanup_solr_request(payload)
         self.assertNotIn('*', cleaned['fl'])
 
-        
+
     def test_limits(self):
         """
         Prevent users from getting certain data
         """
         si = SolrInterface()
-        db.session.add(Limits(uid='9', field='full', filter='bibstem:apj'))
-        db.session.commit()
-        self.assertTrue(len(db.session.query(Limits).filter_by(uid='9').all()) == 1)
-        
+        with self.app.session_scope() as session:
+            session.add(Limits(uid='9', field='full', filter='bibstem:apj'))
+            session.commit()
+            self.assertTrue(len(session.query(Limits).filter_by(uid='9').all()) == 1)
+
         payload = {'fl': ['id,bibcode,title,full,bar'], 'q': '*:*'}
         cleaned = si.cleanup_solr_request(payload, user_id='9')
         self.assertEqual(cleaned['fl'], u'id,bibcode,title,full')
@@ -75,8 +80,9 @@ class TestSolrInterface(TestCase):
         self.assertEqual(cleaned['fq'], ['*:*', u'bibstem:apj'])
 
         # multiple entries for the user
-        db.session.add(Limits(uid='9', field='bar', filter='bibstem:apr'))
-        db.session.commit()
+        with self.app.session_scope() as session:
+            session.add(Limits(uid='9', field='bar', filter='bibstem:apr'))
+            session.commit()
 
         cleaned = si.cleanup_solr_request(
             {'fl': ['id,bibcode,fuLL,BAR'], 'fq': ['*:*']},
@@ -89,8 +95,24 @@ class TestWebservices(TestCase):
 
     def create_app(self):
         """Start the wsgi application"""
-        _ = app.create_app()
-        return _
+        a = app.create_app(**{
+               'SQLALCHEMY_DATABASE_URI': 'sqlite://',
+               'SQLALCHEMY_ECHO': True,
+               'TESTING': True,
+               'PROPAGATE_EXCEPTIONS': True,
+               'TRAP_BAD_REQUEST_ERRORS': True,
+               'SOLR_SERVICE_DISALLOWED_FIELDS': ['full', 'bar']
+            })
+        Base.query = a.db.session.query_property()
+        return a
+
+    def setUp(self):
+        Base.metadata.create_all(bind=self.app.db.engine)
+
+    def tearDown(self):
+        self.app.db.session.remove()
+        self.app.db.drop_all()
+
 
     @httpretty.activate
     def test_cookie_forwarding(self):
@@ -350,7 +372,7 @@ class TestWebservices(TestCase):
                     'file_field': (StringIO(bibcodes), 'big-query/csv'),
                     }
         )
-        
+
         self.assertEqual(resp.status_code, 200)
         self.assertTrue('compression' in resp.data)
         self.assertTrue('bitset' in resp.data)
@@ -374,6 +396,6 @@ class TestWebservices(TestCase):
         self.assertEqual(resp.json['error'],
                          'You can only pass one content stream.')
 
-    
+
 if __name__ == '__main__':
     unittest.main()

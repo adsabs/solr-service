@@ -9,9 +9,7 @@ SOLR_SERVICE_BIGQUERY_HANDLER = SOLR_SERVICE_URL + '/bigquery'
 SOLR_SERVICE_FORWARD_COOKIE_NAME = 'session'
 SOLR_SERVICE_DISALLOWED_FIELDS = ['body', 'full', 'reader']
 SQLALCHEMY_TRACK_MODIFICATIONS = False
-SQLALCHEMY_BINDS = {
-    'solr_service':        'sqlite:///'
-}
+SQLALCHEMY_DATABASE_URI = "sqlite:///"
 SOLR_SERVICE_ALLOWED_FIELDS = [
     'abstract', 'ack', 'aff', 'alternate_bibcode', 'alternate_title',
     'arxiv_class', 'author', 'bibcode', 'bibgroup', 'bibstem',
@@ -22,34 +20,4 @@ SOLR_SERVICE_ALLOWED_FIELDS = [
     'year'
 ]
 
-SOLR_SERVICE_LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'formatters': {
-        'default': {
-            'format': '%(levelname)s\t%(process)d '
-                      '[%(asctime)s]:\t%(message)s',
-            'datefmt': '%m/%d/%Y %H:%M:%S',
-        }
-    },
-    'handlers': {
-        'file': {
-            'formatter': 'default',
-            'level': 'INFO',
-            'class': 'logging.handlers.TimedRotatingFileHandler',
-            'filename': '/tmp/solr_service_app.log',
-        },
-        'console': {
-            'formatter': 'default',
-            'level': 'INFO',
-            'class': 'logging.StreamHandler'
-        },
-    },
-    'loggers': {
-        '': {
-            'handlers': ['file', 'console'],
-            'level': 'INFO',
-            'propagate': True,
-        },
-    },
-}
+
