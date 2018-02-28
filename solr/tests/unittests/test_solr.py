@@ -41,6 +41,10 @@ class TestSolrInterface(TestCase):
         Simple test of the cleanup classmethod
         """
         si = SolrInterface()
+        payload = {'fl': 'id,bibcode,title,volume'}
+        cleaned = si.cleanup_solr_request(payload)
+        self.assertEqual(cleaned['fl'], 'id,bibcode,title,volume')
+
         payload = {'fl': ['id,bibcode,title,volume']}
         cleaned = si.cleanup_solr_request(payload)
         self.assertEqual(cleaned['fl'], 'id,bibcode,title,volume')
