@@ -117,9 +117,9 @@ class SolrInterface(Resource):
         for k,v in payload.items():
             if 'hl.' in k:
                 if '.snippets' in k:
-                    payload[k] = max(0, min(int(len(v) and v[0] or max_hl), max_hl))
+                    payload[k] = max(0, min(int(len(v) and v or max_hl), max_hl))
                 elif '.fragsize' in k:
-                    payload[k] = max(1, min(int(len(v) and v[0] or max_hl), max_frag)) #0 would return whole field
+                    payload[k] = max(1, min(int(len(v) and v or max_hl), max_frag)) #0 would return whole field
 
         return payload
 
