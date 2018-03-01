@@ -20,7 +20,7 @@ class SolrInterface(Resource):
     """Base class that responsible for forwarding a query to Solr"""
 
     def get(self):
-        query = self.cleanup_solr_request(dict(request.args), request.headers.get('X-Adsws-Uid', 'default'))
+        query = self.cleanup_solr_request(request.args.to_dict(), request.headers.get('X-Adsws-Uid', 'default'))
         headers = dict()
         headers['Content-Type'] = 'application/x-www-form-urlencoded'
         r = requests.post(
@@ -80,7 +80,7 @@ class SolrInterface(Resource):
         max_rows *= int(
             request.headers.get('X-Adsws-Ratelimit-Level', 1)
         )
-        if 'rows' in payload and int(payload['rows'][0]) > max_rows:
+        if 'rows' in payload and int(payload['rows']) > max_rows:
             payload['rows'] = max_rows
 
         # we disallow 'return everything'
@@ -88,8 +88,11 @@ class SolrInterface(Resource):
             payload['fl'] = 'id'
         else:
             fields = []
-            for y in payload['fl']:
-                fields.extend([i.strip().lower() for i in y.split(',')])
+            if isinstance(payload['fl'], basestring):
+                fields.extend([i.strip().lower() for i in payload['fl'].split(',')])
+            else:
+                for y in payload['fl']:
+                    fields.extend([i.strip().lower() for i in y.split(',')])
 
             disallowed = current_app.config.get(
                 'SOLR_SERVICE_DISALLOWED_FIELDS'
@@ -114,9 +117,9 @@ class SolrInterface(Resource):
         for k,v in payload.items():
             if 'hl.' in k:
                 if '.snippets' in k:
-                    payload[k] = max(0, min(int(len(v) and v[0] or max_hl), max_hl))
+                    payload[k] = max(0, min(int(len(v) and v or max_hl), max_hl))
                 elif '.fragsize' in k:
-                    payload[k] = max(1, min(int(len(v) and v[0] or max_hl), max_frag)) #0 would return whole field
+                    payload[k] = max(1, min(int(len(v) and v or max_hl), max_frag)) #0 would return whole field
 
         return payload
 
@@ -154,7 +157,7 @@ class BigQuery(SolrInterface):
 
     def post(self):
         payload = dict(request.form)
-        payload.update(request.args)
+        payload.update(request.args.to_dict())
         headers = dict(request.headers)
 
         query = self.cleanup_solr_request(payload, headers.get('X-Adsws-Uid', 'default'))
@@ -164,10 +167,12 @@ class BigQuery(SolrInterface):
             return json.dumps(
                 {'error': 'You can only pass one content stream.'}), 400
 
-        if 'fq' not in query:
+        if 'fq' not in query or (isinstance(query['fq'], basestring) and query['fq'] == ""):
             query['fq'] = [u'{!bitset}']
-        elif len(filter(lambda x: '!bitset' in x, query['fq'])) == 0:
+        elif not isinstance(query['fq'], basestring) and len(filter(lambda x: '!bitset' in x, query['fq'])) == 0:
             query['fq'].append(u'{!bitset}')
+        elif isinstance(query['fq'], basestring) and query['fq'] != u'{!bitset}':
+            query['fq'] = [query['fq'], u'{!bitset}']
 
         if 'big-query' not in headers.get('Content-Type', ''):
             headers['Content-Type'] = 'big-query/csv'
