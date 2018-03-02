@@ -75,21 +75,33 @@ class SolrInterface(Resource):
         :param payload: raw request payload
         :return: sanitized payload
         """
+        def safe_int(val, default=0):
+            try:
+                return int(val)
+            except (ValueError, TypeError):
+                return default
+
         payload['wt'] = 'json'
         max_rows = current_app.config.get('SOLR_SERVICE_MAX_ROWS', 100)
         max_rows *= int(
             request.headers.get('X-Adsws-Ratelimit-Level', 1)
         )
-        if 'rows' in payload and int(payload['rows'][0]) > max_rows:
+
+        # Ensure all values are strings and not lists
+        for key, value in payload.iteritems():
+            if key in payload and isinstance(value, (list, tuple)) and not isinstance(value, basestring):
+                payload[key] = ",".join(value)
+
+        # Do not bypass the max rows limit
+        if ('rows' in payload and safe_int(payload['rows'], default=max_rows) > max_rows) \
+                or ('rows' not in payload):
             payload['rows'] = max_rows
 
         # we disallow 'return everything'
         if 'fl' not in payload:
             payload['fl'] = 'id'
         else:
-            fields = []
-            for y in payload['fl']:
-                fields.extend([i.strip().lower() for i in y.split(',')])
+            fields = [i.strip().lower() for i in payload['fl'].split(',')]
 
             disallowed = current_app.config.get(
                 'SOLR_SERVICE_DISALLOWED_FIELDS'
@@ -114,9 +126,9 @@ class SolrInterface(Resource):
         for k,v in payload.items():
             if 'hl.' in k:
                 if '.snippets' in k:
-                    payload[k] = max(0, min(int(len(v) and v[0] or max_hl), max_hl))
+                    payload[k] = max(0, min(safe_int(v, default=max_hl), max_hl))
                 elif '.fragsize' in k:
-                    payload[k] = max(1, min(int(len(v) and v[0] or max_hl), max_frag)) #0 would return whole field
+                    payload[k] = max(1, min(safe_int(v, default=max_frag), max_frag)) #0 would return whole field
 
         return payload
 
@@ -165,9 +177,9 @@ class BigQuery(SolrInterface):
                 {'error': 'You can only pass one content stream.'}), 400
 
         if 'fq' not in query:
-            query['fq'] = [u'{!bitset}']
-        elif len(filter(lambda x: '!bitset' in x, query['fq'])) == 0:
-            query['fq'].append(u'{!bitset}')
+            query['fq'] = '{!bitset}'
+        elif '{!bitset}' not in query['fq']:
+            query['fq'] = ",".join(query['fq'].split(",") + [u'{!bitset}'])
 
         if 'big-query' not in headers.get('Content-Type', ''):
             headers['Content-Type'] = 'big-query/csv'
