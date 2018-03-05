@@ -84,6 +84,10 @@ class TestSolrInterface(TestCase):
         cleaned = si.cleanup_solr_request(payload)
         self.assertNotIn('*', cleaned['fl'])
 
+        payload = {'fq': 'pos(1,author:foo)'}
+        cleaned = si.cleanup_solr_request(payload)
+        self.assertEqual(cleaned['fq'], ['pos(1,author:foo)'])
+
 
     def test_limits(self):
         """

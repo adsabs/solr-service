@@ -87,10 +87,14 @@ class SolrInterface(Resource):
             request.headers.get('X-Adsws-Ratelimit-Level', 1)
         )
 
-        # Ensure all values are strings and not lists
+        # Ensure all values are strings and not lists except fq,
+        # which needs to be a list of values and a value can contain
+        # commas (e.g., 'pos(1,author:foo)')
         for key, value in payload.iteritems():
-            if key in payload and isinstance(value, (list, tuple)) and not isinstance(value, basestring):
+            if key != "fq" and isinstance(value, (list, tuple)) and not isinstance(value, basestring):
                 payload[key] = ",".join(value)
+            elif key == "fq" and not isinstance(value, (list, tuple)):
+                payload[key] = [value]
 
         # Do not bypass the max rows limit
         if 'rows' in payload and isinstance(payload['rows'], basestring):
@@ -178,9 +182,9 @@ class BigQuery(SolrInterface):
                 {'error': 'You can only pass one content stream.'}), 400
 
         if 'fq' not in query:
-            query['fq'] = '{!bitset}'
-        elif '!bitset' not in query['fq']:
-            query['fq'] = ",".join(query['fq'].split(",") + [u'{!bitset}'])
+            query['fq'] = [u'{!bitset}']
+        elif len(filter(lambda x: '!bitset' in x, query['fq'])) == 0:
+            query['fq'].append(u'{!bitset}')
 
         if 'big-query' not in headers.get('Content-Type', ''):
             headers['Content-Type'] = 'big-query/csv'
