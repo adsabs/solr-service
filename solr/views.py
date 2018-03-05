@@ -93,7 +93,7 @@ class SolrInterface(Resource):
                 payload[key] = ",".join(value)
 
         # Do not bypass the max rows limit
-        if 'rows' in payload:
+        if 'rows' in payload and isinstance(payload['rows'], basestring):
             payload['rows'] = safe_int(payload['rows'].split(",")[0], default=max_rows) # In case of multiple rows params, select the first one
         if 'rows' not in payload or  payload['rows'] > max_rows:
             payload['rows'] = max_rows

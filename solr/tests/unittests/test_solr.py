@@ -46,9 +46,17 @@ class TestSolrInterface(TestCase):
         self.assertEqual(cleaned['rows'], self.app.config.get('SOLR_SERVICE_MAX_ROWS', 100))
         self.assertEqual(cleaned['fl'], 'id')
 
+        payload = {'rows': '1000000'}
+        cleaned = si.cleanup_solr_request(payload)
+        self.assertEqual(cleaned['rows'], self.app.config.get('SOLR_SERVICE_MAX_ROWS', 100))
+
         payload = {'rows': 1000000}
         cleaned = si.cleanup_solr_request(payload)
         self.assertEqual(cleaned['rows'], self.app.config.get('SOLR_SERVICE_MAX_ROWS', 100))
+
+        payload = {'rows': '5,1000000'}
+        cleaned = si.cleanup_solr_request(payload)
+        self.assertEqual(cleaned['rows'], 5)
 
         payload = {'hl.snippets': 1000000, 'hl.fragsize': 1000000}
         cleaned = si.cleanup_solr_request(payload)
