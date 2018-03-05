@@ -178,7 +178,7 @@ class BigQuery(SolrInterface):
 
         if 'fq' not in query:
             query['fq'] = '{!bitset}'
-        elif '{!bitset}' not in query['fq']:
+        elif '!bitset' not in query['fq']:
             query['fq'] = ",".join(query['fq'].split(",") + [u'{!bitset}'])
 
         if 'big-query' not in headers.get('Content-Type', ''):
