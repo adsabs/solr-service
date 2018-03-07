@@ -41,6 +41,41 @@ class TestSolrInterface(TestCase):
         Simple test of the cleanup classmethod
         """
         si = SolrInterface()
+        payload = {}
+        cleaned = si.cleanup_solr_request(payload)
+        self.assertEqual(cleaned['rows'], self.app.config.get('SOLR_SERVICE_MAX_ROWS', 100))
+        self.assertEqual(cleaned['fl'], 'id')
+
+        payload = {'rows': '1000000'}
+        cleaned = si.cleanup_solr_request(payload)
+        self.assertEqual(cleaned['rows'], self.app.config.get('SOLR_SERVICE_MAX_ROWS', 100))
+
+        payload = {'rows': 1000000}
+        cleaned = si.cleanup_solr_request(payload)
+        self.assertEqual(cleaned['rows'], self.app.config.get('SOLR_SERVICE_MAX_ROWS', 100))
+
+        payload = {'rows': '5'}
+        cleaned = si.cleanup_solr_request(payload)
+        self.assertEqual(cleaned['rows'], 5)
+
+        payload = {'rows': ['5', '1000000']}
+        cleaned = si.cleanup_solr_request(payload)
+        self.assertEqual(cleaned['rows'], 5)
+
+        payload = {'rows': ['1', '0']}
+        cleaned = si.cleanup_solr_request(payload)
+        self.assertEqual(cleaned['rows'], 1)
+
+        payload = {'hl.snippets': 1000000, 'hl.fragsize': 1000000}
+        cleaned = si.cleanup_solr_request(payload)
+        self.assertEqual(cleaned['hl.snippets'], self.app.config.get('SOLR_SERVICE_MAX_SNIPPETS', 4))
+        self.assertEqual(cleaned['hl.fragsize'], self.app.config.get('SOLR_SERVICE_MAX_FRAGSIZE', 100))
+
+        payload = {'hl.snippets': [2, 1000000], 'hl.fragsize': [3, 1000000]}
+        cleaned = si.cleanup_solr_request(payload)
+        self.assertEqual(cleaned['hl.snippets'], self.app.config.get('SOLR_SERVICE_MAX_SNIPPETS', 2))
+        self.assertEqual(cleaned['hl.fragsize'], self.app.config.get('SOLR_SERVICE_MAX_FRAGSIZE', 3))
+
         payload = {'fl': ['id,bibcode,title,volume']}
         cleaned = si.cleanup_solr_request(payload)
         self.assertEqual(cleaned['fl'], 'id,bibcode,title,volume')
@@ -48,6 +83,7 @@ class TestSolrInterface(TestCase):
         payload = {'fl': ['id ', ' bibcode ', 'title ', ' volume']}
         cleaned = si.cleanup_solr_request(payload)
         self.assertEqual(cleaned['fl'], 'id,bibcode,title,volume')
+        self.assertEqual(cleaned['rows'], self.app.config.get('SOLR_SERVICE_MAX_ROWS', 100))
 
         payload = {'fl': ['id', 'bibcode', '*']}
         cleaned = si.cleanup_solr_request(payload)
@@ -56,6 +92,10 @@ class TestSolrInterface(TestCase):
         payload = {'fl': ['id,bibcode,*']}
         cleaned = si.cleanup_solr_request(payload)
         self.assertNotIn('*', cleaned['fl'])
+
+        payload = {'fq': ['pos(1,author:foo)']}
+        cleaned = si.cleanup_solr_request(payload)
+        self.assertEqual(cleaned['fq'], ['pos(1,author:foo)'])
 
 
     def test_limits(self):

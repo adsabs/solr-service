@@ -75,13 +75,32 @@ class SolrInterface(Resource):
         :param payload: raw request payload
         :return: sanitized payload
         """
+        def safe_int(val, default=0):
+            if isinstance(val, (list, tuple)):
+                val = val[0]
+            try:
+                return int(val)
+            except (ValueError, TypeError):
+                return default
+
         payload['wt'] = 'json'
         max_rows = current_app.config.get('SOLR_SERVICE_MAX_ROWS', 100)
         max_rows *= int(
             request.headers.get('X-Adsws-Ratelimit-Level', 1)
         )
-        if 'rows' in payload and int(payload['rows'][0]) > max_rows:
-            payload['rows'] = max_rows
+
+        # Ensure there is a single rows value and that it does not bypass the max rows limit
+        rows = max_rows
+        if 'rows' in payload:
+            rows = safe_int(payload['rows'], default=max_rows)
+        rows = min(rows, max_rows)
+        payload['rows'] = rows
+
+        # Ensure there is a single start value
+        start = 0
+        if 'start' in payload:
+            start = safe_int(payload['start'], default=0)
+        payload['start'] = start
 
         # we disallow 'return everything'
         if 'fl' not in payload:
@@ -114,9 +133,9 @@ class SolrInterface(Resource):
         for k,v in payload.items():
             if 'hl.' in k:
                 if '.snippets' in k:
-                    payload[k] = max(0, min(int(len(v) and v[0] or max_hl), max_hl))
+                    payload[k] = max(0, min(safe_int(v, default=max_hl), max_hl))
                 elif '.fragsize' in k:
-                    payload[k] = max(1, min(int(len(v) and v[0] or max_hl), max_frag)) #0 would return whole field
+                    payload[k] = max(1, min(safe_int(v, default=max_frag), max_frag)) #0 would return whole field
 
         return payload
 
