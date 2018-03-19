@@ -15,18 +15,14 @@ class StatusView(Resource):
     def get(self):
         return {'app': current_app.name, 'status': 'online'}, 200
 
-            
+
 class SolrInterface(Resource):
     """Base class that responsible for forwarding a query to Solr"""
-    handler = 'SOLR_SERVICE_URL'
-    
-    def __init__(self, *args, **kwargs):
-        Resource.__init__(self, *args, **kwargs)
-        self._host = None
 
     def get(self):
-        query, headers = self.cleanup_solr_request(dict(request.args))
-        
+        query = self.cleanup_solr_request(dict(request.args), request.headers.get('X-Adsws-Uid', 'default'))
+        headers = dict()
+        headers['Content-Type'] = 'application/x-www-form-urlencoded'
         r = requests.post(
             current_app.config[self.handler],
             data=query,
@@ -73,48 +69,37 @@ class SolrInterface(Resource):
             session.commit()
 
 
-    def cleanup_solr_request(self, payload, user_id=None):
+    def cleanup_solr_request(self, payload, user_id='default'):
         """
         Sanitizes a request before it is passed to solr
-        
-        :param payload: dict, raw request payload. Warning: we'll
-            modify the dictionary directly
-        :kwarg user_id: string, identifying the user
-        
-        :return: tuple - (sanitized payload, headers for solr)
+        :param payload: raw request payload
+        :return: sanitized payload
         """
-        
-        if not user_id:
-            user_id = request.headers.get('X-Adsws-Uid', 'default')
-        
-        headers = {}
-        headers['Content-Type'] = request.headers.get('Content-Type', 'application/x-www-form-urlencoded') or 'application/x-www-form-urlencoded'
-        
-        # trace id and Host header are important for proper routing/logging
-        headers['Host'] = self.get_host(current_app.config.get(self.handler))
-        
-        if 'x-amzn-trace-id' in request.headers:
-            payload['x-amzn-trace-id'] = request.headers['x-amzn-trace-id']
+        def safe_int(val, default=0):
+            if isinstance(val, (list, tuple)):
+                val = val[0]
+            try:
+                return int(val)
+            except (ValueError, TypeError):
+                return default
 
         payload['wt'] = 'json'
         max_rows = current_app.config.get('SOLR_SERVICE_MAX_ROWS', 100)
         max_rows *= int(
             request.headers.get('X-Adsws-Ratelimit-Level', 1)
         )
-        
-        
 
         # Ensure there is a single rows value and that it does not bypass the max rows limit
         rows = max_rows
         if 'rows' in payload:
-            rows = _safe_int(payload['rows'], default=max_rows)
+            rows = safe_int(payload['rows'], default=max_rows)
         rows = min(rows, max_rows)
         payload['rows'] = rows
 
         # Ensure there is a single start value
         start = 0
         if 'start' in payload:
-            start = _safe_int(payload['start'], default=0)
+            start = safe_int(payload['start'], default=0)
         payload['start'] = start
 
         # we disallow 'return everything'
@@ -148,23 +133,12 @@ class SolrInterface(Resource):
         for k,v in payload.items():
             if 'hl.' in k:
                 if '.snippets' in k:
-                    payload[k] = max(0, min(_safe_int(v, default=max_hl), max_hl))
+                    payload[k] = max(0, min(safe_int(v, default=max_hl), max_hl))
                 elif '.fragsize' in k:
-                    payload[k] = max(1, min(_safe_int(v, default=max_frag), max_frag)) #0 would return whole field
+                    payload[k] = max(1, min(safe_int(v, default=max_frag), max_frag)) #0 would return whole field
 
-        return payload, headers
-    
-    def get_host(self, url):
-        """Just extracts the host from the url."""
-        return self._host or self._get_host(url)
-    
-    def _get_host(self, url):
-        parts = url.split('/')
-        if 'http' in parts[0].lower():
-            self._host = parts[0].lower() + '//' + parts[2]
-        else:
-            self._host = 'http://' + parts[0]
-        return self._host
+        return payload
+
 
 class Tvrh(SolrInterface):
     """Exposes the solr term-vector histogram endpoint"""
@@ -200,8 +174,9 @@ class BigQuery(SolrInterface):
     def post(self):
         payload = dict(request.form)
         payload.update(request.args)
+        headers = dict(request.headers)
 
-        query, headers = self.cleanup_solr_request(payload)
+        query = self.cleanup_solr_request(payload, headers.get('X-Adsws-Uid', 'default'))
 
         if request.files and \
                 sum([len(i) for i in request.files.listvalues()]) > 1:
@@ -235,12 +210,3 @@ class BigQuery(SolrInterface):
         else:
             return json.dumps({'error': "malformed request"}), 400
         return r.text, r.status_code, r.headers
-
-
-def _safe_int(val, default=0):
-    if isinstance(val, (list, tuple)):
-        val = val[0]
-    try:
-        return int(val)
-    except (ValueError, TypeError):
-        return default

@@ -10,7 +10,7 @@ import app
 from werkzeug.security import gen_salt
 from werkzeug.datastructures import MultiDict
 from StringIO import StringIO
-from solr.tests.mocks import MockSolrResponse
+from ..mocks import MockSolrResponse
 from views import SolrInterface
 from models import Limits, Base
 
@@ -42,63 +42,60 @@ class TestSolrInterface(TestCase):
         """
         si = SolrInterface()
         payload = {}
-        cleaned, headers = si.cleanup_solr_request(payload)
+        cleaned = si.cleanup_solr_request(payload)
         self.assertEqual(cleaned['rows'], self.app.config.get('SOLR_SERVICE_MAX_ROWS', 100))
         self.assertEqual(cleaned['fl'], 'id')
 
         payload = {'rows': '1000000'}
-        cleaned, headers = si.cleanup_solr_request(payload)
+        cleaned = si.cleanup_solr_request(payload)
         self.assertEqual(cleaned['rows'], self.app.config.get('SOLR_SERVICE_MAX_ROWS', 100))
 
         payload = {'rows': 1000000}
-        cleaned, headers = si.cleanup_solr_request(payload)
+        cleaned = si.cleanup_solr_request(payload)
         self.assertEqual(cleaned['rows'], self.app.config.get('SOLR_SERVICE_MAX_ROWS', 100))
 
         payload = {'rows': '5'}
-        cleaned, headers = si.cleanup_solr_request(payload)
+        cleaned = si.cleanup_solr_request(payload)
         self.assertEqual(cleaned['rows'], 5)
 
         payload = {'rows': ['5', '1000000']}
-        cleaned, headers = si.cleanup_solr_request(payload)
+        cleaned = si.cleanup_solr_request(payload)
         self.assertEqual(cleaned['rows'], 5)
 
         payload = {'rows': ['1', '0']}
-        cleaned, headers = si.cleanup_solr_request(payload)
+        cleaned = si.cleanup_solr_request(payload)
         self.assertEqual(cleaned['rows'], 1)
 
         payload = {'hl.snippets': 1000000, 'hl.fragsize': 1000000}
-        cleaned, headers = si.cleanup_solr_request(payload)
+        cleaned = si.cleanup_solr_request(payload)
         self.assertEqual(cleaned['hl.snippets'], self.app.config.get('SOLR_SERVICE_MAX_SNIPPETS', 4))
         self.assertEqual(cleaned['hl.fragsize'], self.app.config.get('SOLR_SERVICE_MAX_FRAGSIZE', 100))
 
         payload = {'hl.snippets': [2, 1000000], 'hl.fragsize': [3, 1000000]}
-        cleaned, headers = si.cleanup_solr_request(payload)
+        cleaned = si.cleanup_solr_request(payload)
         self.assertEqual(cleaned['hl.snippets'], self.app.config.get('SOLR_SERVICE_MAX_SNIPPETS', 2))
         self.assertEqual(cleaned['hl.fragsize'], self.app.config.get('SOLR_SERVICE_MAX_FRAGSIZE', 3))
 
         payload = {'fl': ['id,bibcode,title,volume']}
-        cleaned, headers = si.cleanup_solr_request(payload)
+        cleaned = si.cleanup_solr_request(payload)
         self.assertEqual(cleaned['fl'], 'id,bibcode,title,volume')
 
         payload = {'fl': ['id ', ' bibcode ', 'title ', ' volume']}
-        cleaned, headers = si.cleanup_solr_request(payload)
+        cleaned = si.cleanup_solr_request(payload)
         self.assertEqual(cleaned['fl'], 'id,bibcode,title,volume')
         self.assertEqual(cleaned['rows'], self.app.config.get('SOLR_SERVICE_MAX_ROWS', 100))
 
         payload = {'fl': ['id', 'bibcode', '*']}
-        cleaned, headers = si.cleanup_solr_request(payload)
+        cleaned = si.cleanup_solr_request(payload)
         self.assertNotIn('*', cleaned['fl'])
 
         payload = {'fl': ['id,bibcode,*']}
-        cleaned, headers = si.cleanup_solr_request(payload)
+        cleaned = si.cleanup_solr_request(payload)
         self.assertNotIn('*', cleaned['fl'])
 
         payload = {'fq': ['pos(1,author:foo)']}
-        cleaned, headers = si.cleanup_solr_request(payload)
+        cleaned = si.cleanup_solr_request(payload)
         self.assertEqual(cleaned['fq'], ['pos(1,author:foo)'])
-        
-        self.assertEqual(headers, 
-                         {'Host': u'http://localhost:8983', 'Content-Type': 'application/x-www-form-urlencoded'})
 
 
     def test_limits(self):
@@ -112,11 +109,11 @@ class TestSolrInterface(TestCase):
             self.assertTrue(len(session.query(Limits).filter_by(uid='9').all()) == 1)
 
         payload = {'fl': ['id,bibcode,title,full,bar'], 'q': '*:*'}
-        cleaned, headers = si.cleanup_solr_request(payload, user_id='9')
+        cleaned = si.cleanup_solr_request(payload, user_id='9')
         self.assertEqual(cleaned['fl'], u'id,bibcode,title,full')
         self.assertEqual(cleaned['fq'], [u'bibstem:apj'])
 
-        cleaned, headers = si.cleanup_solr_request(
+        cleaned = si.cleanup_solr_request(
             {'fl': ['id,bibcode,full'], 'fq': ['*:*']},
             user_id='9')
         self.assertEqual(cleaned['fl'], u'id,bibcode,full')
@@ -127,7 +124,7 @@ class TestSolrInterface(TestCase):
             session.add(Limits(uid='9', field='bar', filter='bibstem:apr'))
             session.commit()
 
-        cleaned, headers = si.cleanup_solr_request(
+        cleaned = si.cleanup_solr_request(
             {'fl': ['id,bibcode,fuLL,BAR'], 'fq': ['*:*']},
             user_id='9')
         self.assertEqual(cleaned['fl'], u'id,bibcode,full,bar')
