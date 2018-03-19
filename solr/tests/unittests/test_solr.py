@@ -24,6 +24,8 @@ class TestSolrInterface(TestCase):
                'TESTING': True,
                'PROPAGATE_EXCEPTIONS': True,
                'TRAP_BAD_REQUEST_ERRORS': True,
+               'SOLR_SERVICE_DEFAULT_ROWS': 10,
+               'SOLR_SERVICE_MAX_ROWS': 100,
                'SOLR_SERVICE_DISALLOWED_FIELDS': ['full', 'bar']
             })
         Base.query = a.db.session.query_property()
@@ -43,7 +45,7 @@ class TestSolrInterface(TestCase):
         si = SolrInterface()
         payload = {}
         cleaned, headers = si.cleanup_solr_request(payload)
-        self.assertEqual(cleaned['rows'], self.app.config.get('SOLR_SERVICE_MAX_ROWS', 100))
+        self.assertEqual(cleaned['rows'], self.app.config.get('SOLR_SERVICE_DEFAULT_ROWS', 10))
         self.assertEqual(cleaned['fl'], 'id')
 
         payload = {'rows': '1000000'}
@@ -83,7 +85,7 @@ class TestSolrInterface(TestCase):
         payload = {'fl': ['id ', ' bibcode ', 'title ', ' volume']}
         cleaned, headers = si.cleanup_solr_request(payload)
         self.assertEqual(cleaned['fl'], 'id,bibcode,title,volume')
-        self.assertEqual(cleaned['rows'], self.app.config.get('SOLR_SERVICE_MAX_ROWS', 100))
+        self.assertEqual(cleaned['rows'], self.app.config.get('SOLR_SERVICE_DEFAULT_ROWS', 100))
 
         payload = {'fl': ['id', 'bibcode', '*']}
         cleaned, headers = si.cleanup_solr_request(payload)
@@ -96,8 +98,8 @@ class TestSolrInterface(TestCase):
         payload = {'fq': ['pos(1,author:foo)']}
         cleaned, headers = si.cleanup_solr_request(payload)
         self.assertEqual(cleaned['fq'], ['pos(1,author:foo)'])
-        
-        self.assertEqual(headers, 
+
+        self.assertEqual(headers,
                          {'Host': u'localhost:8983', 'Content-Type': 'application/x-www-form-urlencoded'})
 
 
@@ -189,12 +191,17 @@ class TestWebservices(TestCase):
 
             r = c.get(url_for('search'), query_string={'q': 'star'})
 
-            # One and only one cookie
-            self.assertEqual(len(r.data.split('=')), 2)
+            # Two cookies (session and sroute)
+            self.assertEqual(len(r.data.split(';')), 2)
 
             # This forwarded cookie should match the one we gave originally
-            rcookie_value = r.data.split('=')[1]
-            self.assertEqual(rcookie_value, cookie_value)
+            cookie_found = False
+            for cookie in r.data.split(';'):
+                key, value = cookie.split('=')
+                if key.strip() == self.app.config.get("SOLR_SERVICE_FORWARD_COOKIE_NAME"):
+                    self.assertEqual(value.strip(), cookie_value)
+                    cookie_found = True
+            self.assertTrue(cookie_found)
 
 
     def test_disallowed_fields(self):

@@ -15,18 +15,18 @@ class StatusView(Resource):
     def get(self):
         return {'app': current_app.name, 'status': 'online'}, 200
 
-            
+
 class SolrInterface(Resource):
     """Base class that responsible for forwarding a query to Solr"""
     handler = 'SOLR_SERVICE_URL'
-    
+
     def __init__(self, *args, **kwargs):
         Resource.__init__(self, *args, **kwargs)
         self._host = None
 
     def get(self):
         query, headers = self.cleanup_solr_request(dict(request.args))
-        
+
         r = requests.post(
             current_app.config[self.handler],
             data=query,
@@ -45,8 +45,9 @@ class SolrInterface(Resource):
         :rtype dict or None
         """
         cookie_name = current_app.config.get('SOLR_SERVICE_FORWARD_COOKIE_NAME')
-        cookie = {cookie_name: request.cookies.get(cookie_name, 'session')}
-        return cookie if cookie[cookie_name] else None
+        cookie_instance_name = current_app.config.get('SOLR_SERVICE_INSTANCE_COOKIE_NAME')
+        cookie = {cookie_name: request.cookies.get(cookie_name, 'session'), cookie_instance_name: request.cookies.get(cookie_instance_name, 'sroute')}
+        return cookie
 
     def apply_protective_filters(self, payload, user_id, protected_fields):
         """
@@ -76,23 +77,23 @@ class SolrInterface(Resource):
     def cleanup_solr_request(self, payload, user_id=None):
         """
         Sanitizes a request before it is passed to solr
-        
+
         :param payload: dict, raw request payload. Warning: we'll
             modify the dictionary directly
         :kwarg user_id: string, identifying the user
-        
+
         :return: tuple - (sanitized payload, headers for solr)
         """
-        
+
         if not user_id:
             user_id = request.headers.get('X-Adsws-Uid', 'default')
-        
+
         headers = {}
         headers['Content-Type'] = request.headers.get('Content-Type', 'application/x-www-form-urlencoded') or 'application/x-www-form-urlencoded'
-        
+
         # trace id and Host header are important for proper routing/logging
         headers['Host'] = self.get_host(current_app.config.get(self.handler))
-        
+
         if 'x-amzn-trace-id' in request.headers:
             payload['x-amzn-trace-id'] = request.headers['x-amzn-trace-id']
 
@@ -101,11 +102,11 @@ class SolrInterface(Resource):
         max_rows *= int(
             request.headers.get('X-Adsws-Ratelimit-Level', 1)
         )
-        
-        
+
+
 
         # Ensure there is a single rows value and that it does not bypass the max rows limit
-        rows = max_rows
+        rows = current_app.config.get('SOLR_SERVICE_DEFAULT_ROWS', 10)
         if 'rows' in payload:
             rows = _safe_int(payload['rows'], default=max_rows)
         rows = min(rows, max_rows)
@@ -153,11 +154,11 @@ class SolrInterface(Resource):
                     payload[k] = max(1, min(_safe_int(v, default=max_frag), max_frag)) #0 would return whole field
 
         return payload, headers
-    
+
     def get_host(self, url):
         """Just extracts the host from the url."""
         return self._host or self._get_host(url)
-    
+
     def _get_host(self, url):
         parts = url.split('/')
         if 'http' in parts[0].lower():
