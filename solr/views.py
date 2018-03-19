@@ -161,9 +161,9 @@ class SolrInterface(Resource):
     def _get_host(self, url):
         parts = url.split('/')
         if 'http' in parts[0].lower():
-            self._host = parts[0].lower() + '//' + parts[2]
+            self._host = parts[2]
         else:
-            self._host = 'http://' + parts[0]
+            self._host = parts[0]
         return self._host
 
 class Tvrh(SolrInterface):
