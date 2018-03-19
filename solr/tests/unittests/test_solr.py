@@ -98,7 +98,7 @@ class TestSolrInterface(TestCase):
         self.assertEqual(cleaned['fq'], ['pos(1,author:foo)'])
         
         self.assertEqual(headers, 
-                         {'Host': u'http://localhost:8983', 'Content-Type': 'application/x-www-form-urlencoded'})
+                         {'Host': u'localhost:8983', 'Content-Type': 'application/x-www-form-urlencoded'})
 
 
     def test_limits(self):
