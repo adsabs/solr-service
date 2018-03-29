@@ -57,6 +57,8 @@ def create_app(**config):
         )
         if code == 200:
             resp.headers['Cache-Control'] = app.config.get('SOLR_CACHE_CONTROL', "public, max-age=600")
+        if 'Set-Cookie' in headers:
+            resp.headers['Set-Cookie'] = headers['Set-Cookie']
         return resp
 
     api.add_resource(StatusView, '/status')
