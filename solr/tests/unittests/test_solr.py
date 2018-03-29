@@ -175,12 +175,13 @@ class TestWebservices(TestCase):
         with self.client as c:
             cookie_value = gen_salt(200)
 
-            # This cookie should be forwarded
-            c.set_cookie(
-                'localhost',
-                self.app.config.get("SOLR_SERVICE_FORWARD_COOKIE_NAME"),
-                cookie_value
-            )
+            for cookie_name in self.app.config.get("SOLR_SERVICE_FORWARDED_COOKIES"):
+                # This cookie should be forwarded
+                c.set_cookie(
+                    'localhost',
+                    cookie_name,
+                    cookie_value
+                )
 
             # This cookie should not be forwarded
             c.set_cookie(
@@ -192,16 +193,16 @@ class TestWebservices(TestCase):
             r = c.get(url_for('search'), query_string={'q': 'star'})
 
             # Two cookies (session and sroute)
-            self.assertEqual(len(r.data.split(';')), 2)
+            self.assertEqual(len(r.data.split(';')), len(self.app.config.get("SOLR_SERVICE_FORWARDED_COOKIES")))
 
             # This forwarded cookie should match the one we gave originally
-            cookie_found = False
+            n_found_cookies_with_good_value = 0
             for cookie in r.data.split(';'):
                 key, value = cookie.split('=')
-                if key.strip() == self.app.config.get("SOLR_SERVICE_FORWARD_COOKIE_NAME"):
+                if key in self.app.config.get("SOLR_SERVICE_FORWARDED_COOKIES"):
                     self.assertEqual(value.strip(), cookie_value)
-                    cookie_found = True
-            self.assertTrue(cookie_found)
+                    n_found_cookies_with_good_value += 1
+            self.assertEqual(n_found_cookies_with_good_value, len(self.app.config.get("SOLR_SERVICE_FORWARDED_COOKIES")))
 
 
     def test_disallowed_fields(self):

@@ -38,16 +38,22 @@ class SolrInterface(Resource):
     @staticmethod
     def set_cookies(request):
         """
-        Picks out a single cookie from the current flask.request context with
-        the name `SOLR_SERVICE_FORWARD_COOKIE_NAME`
+        Picks out the cookies from the current flask.request context with
+        a name in `SOLR_SERVICE_FORWARDED_COOKIES`
         :param request: current flask.request
         :return: the single cookie with the cookie_name or None
         :rtype dict or None
         """
-        cookie_name = current_app.config.get('SOLR_SERVICE_FORWARD_COOKIE_NAME')
-        cookie_instance_name = current_app.config.get('SOLR_SERVICE_INSTANCE_COOKIE_NAME')
-        cookie = {cookie_name: request.cookies.get(cookie_name, 'session'), cookie_instance_name: request.cookies.get(cookie_instance_name, 'sroute')}
-        return cookie
+        cookie_names = current_app.config.get('SOLR_SERVICE_FORWARDED_COOKIES', {})
+        cookie = {}
+        for cookie_name in cookie_names:
+            value = request.cookies.get(cookie_name, None)
+            if value:
+                cookie[cookie_name] = value
+        if cookie:
+            return cookie
+        else:
+            return None
 
     def apply_protective_filters(self, payload, user_id, protected_fields):
         """
