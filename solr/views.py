@@ -95,7 +95,10 @@ class SolrInterface(Resource):
             user_id = request.headers.get('X-Adsws-Uid', 'default')
 
         headers = {}
-        headers['Content-Type'] = request.headers.get('Content-Type', 'application/x-www-form-urlencoded') or 'application/x-www-form-urlencoded'
+        _h = request.headers.get('Content-Type', 'application/x-www-form-urlencoded')
+        if 'big-query' not in _h: # only let big-query headers pass unmolested
+            _h = 'application/x-www-form-urlencoded'
+        headers['Content-Type'] =  _h
 
         # trace id and Host header are important for proper routing/logging
         headers['Host'] = self.get_host(current_app.config.get(self.handler))
