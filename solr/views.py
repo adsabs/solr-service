@@ -2,7 +2,6 @@ from flask import current_app, request
 from flask.ext.restful import Resource
 from flask.ext.discoverer import advertise
 import json
-import requests
 from models import Limits
 from sqlalchemy import or_
 
@@ -27,7 +26,7 @@ class SolrInterface(Resource):
     def get(self):
         query, headers = self.cleanup_solr_request(dict(request.args))
 
-        r = requests.post(
+        r = current_app.client.post(
             current_app.config[self.handler],
             data=query,
             headers=headers,
@@ -227,7 +226,7 @@ class BigQuery(SolrInterface):
             headers['Content-Type'] = 'big-query/csv'
 
         if request.data:
-            r = requests.post(
+            r = current_app.client.post(
                 current_app.config[self.handler],
                 params=query,
                 data=request.data,
@@ -235,7 +234,7 @@ class BigQuery(SolrInterface):
                 cookies=SolrInterface.set_cookies(request),
             )
         elif request.files:
-            r = requests.post(
+            r = current_app.client.post(
                 current_app.config[self.handler],
                 params=query,
                 headers=headers,

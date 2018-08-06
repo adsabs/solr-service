@@ -1,5 +1,6 @@
 import os
 
+LOG_STDOUT = True
 SOLR_SERVICE_VERSION = 'v4.10'
 SOLR_SERVICE_URL = os.environ.get('SOLR_SERVICE_URL', 'http://localhost:8983/solr')
 SOLR_SERVICE_TVRH_HANDLER = SOLR_SERVICE_URL + '/tvrh'
