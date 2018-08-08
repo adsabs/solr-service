@@ -26,12 +26,14 @@ class SolrInterface(Resource):
     def get(self):
         query, headers = self.cleanup_solr_request(dict(request.args))
 
+        current_app.logger.info("Dispatching 'POST' request to endpoint '{}'".format(current_app.config[self.handler]))
         r = current_app.client.post(
             current_app.config[self.handler],
             data=query,
             headers=headers,
             cookies=SolrInterface.set_cookies(request),
         )
+        current_app.logger.info("Received response from Solr with status code '{}'".format(r.status_code))
         return r.text, r.status_code, r.headers
 
     @staticmethod
@@ -102,7 +104,9 @@ class SolrInterface(Resource):
         # trace id and Host header are important for proper routing/logging
         headers['Host'] = self.get_host(current_app.config.get(self.handler))
 
-        if 'x-amzn-trace-id' in request.headers:
+        if 'X-Amzn-Trace-Id' in request.headers:
+            payload['x-amzn-trace-id'] = request.headers['X-Amzn-Trace-Id']
+        elif 'x-amzn-trace-id' in request.headers:
             payload['x-amzn-trace-id'] = request.headers['x-amzn-trace-id']
 
         payload['wt'] = 'json'
@@ -214,8 +218,10 @@ class BigQuery(SolrInterface):
 
         if request.files and \
                 sum([len(i) for i in request.files.listvalues()]) > 1:
+            message = "You can only pass one content stream."
+            current_app.logger.error(message)
             return json.dumps(
-                {'error': 'You can only pass one content stream.'}), 400
+                {'error': message}), 400
 
         if 'fq' not in query:
             query['fq'] = [u'{!bitset}']
@@ -226,6 +232,7 @@ class BigQuery(SolrInterface):
             headers['Content-Type'] = 'big-query/csv'
 
         if request.data:
+            current_app.logger.info("Dispatching 'POST' request to endpoint '{}'".format(current_app.config[self.handler]))
             r = current_app.client.post(
                 current_app.config[self.handler],
                 params=query,
@@ -233,7 +240,9 @@ class BigQuery(SolrInterface):
                 headers=headers,
                 cookies=SolrInterface.set_cookies(request),
             )
+            current_app.logger.info("Received response from endpoint '{}' with status code '{}'".format(current_app.config[self.handler], r.status_code))
         elif request.files:
+            current_app.logger.info("Dispatching 'POST' request to endpoint '{}'".format(current_app.config[self.handler]))
             r = current_app.client.post(
                 current_app.config[self.handler],
                 params=query,
@@ -241,8 +250,11 @@ class BigQuery(SolrInterface):
                 files=request.files,
                 cookies=SolrInterface.set_cookies(request),
             )
+            current_app.logger.info("Received response from endpoint '{}' with status code '{}'".format(current_app.config[self.handler], r.status_code))
         else:
-            return json.dumps({'error': "malformed request"}), 400
+            message = "Malformed request"
+            current_app.logger.error(message)
+            return json.dumps({'error': message}), 400
         return r.text, r.status_code, r.headers
 
 
