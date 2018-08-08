@@ -1,5 +1,7 @@
 import os
 
+LOG_LEVEL = 30 # To be deprecated when all microservices use ADSFlask
+LOGGING_LEVEL = "INFO"
 LOG_STDOUT = True
 SOLR_SERVICE_VERSION = 'v4.10'
 SOLR_SERVICE_URL = os.environ.get('SOLR_SERVICE_URL', 'http://localhost:8983/solr')
