@@ -33,7 +33,7 @@ class SolrInterface(Resource):
             headers=headers,
             cookies=SolrInterface.set_cookies(request),
         )
-        current_app.logger.info("Received response from Solr with status code '{}'".format(r.status_code))
+        current_app.logger.info("Received response from from endpoint '{}' with status code '{}'".format(current_app.config[self.handler], r.status_code))
         return r.text, r.status_code, r.headers
 
     @staticmethod
