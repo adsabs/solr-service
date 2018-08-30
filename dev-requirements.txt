@@ -1,5 +1,5 @@
 flask-cors==2.0.0
-flask-testing==0.4.2
+flask-testing==0.6.2
 httpretty==0.8.10
 coveralls==1.1
 pep257==0.5.0
