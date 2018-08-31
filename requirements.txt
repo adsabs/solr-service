@@ -1,7 +1,2 @@
-git+https://github.com/adsabs/ADSMicroserviceUtils.git@v1.0.10
-Werkzeug==0.10.4
-Flask-RESTful==0.3.6
-flask-consulate==0.1.2
-SQLAlchemy-Utils==0.27.7
-psycopg2==2.7.3.2
+git+https://github.com/adsabs/ADSMicroserviceUtils.git@v1.0.13
 alembic==0.8.1
