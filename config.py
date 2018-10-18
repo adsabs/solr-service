@@ -25,4 +25,5 @@ SOLR_SERVICE_ALLOWED_FIELDS = [
     'year'
 ]
 
-
+API_URL = 'http://adsws'
+QUERY_ENDPOINT = API_URL + '/vault/query' 
