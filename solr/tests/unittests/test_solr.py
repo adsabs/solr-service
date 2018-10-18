@@ -13,6 +13,7 @@ from StringIO import StringIO
 from solr.tests.mocks import MockSolrResponse
 from views import SolrInterface
 from models import Limits, Base
+import mock
 
 class TestSolrInterface(TestCase):
 
@@ -285,7 +286,26 @@ class TestWebservices(TestCase):
             )
             self.assertEqual(len(r.json['response']['docs']), 7)
 
-
+    
+    def test_docs_subquery(self):
+        """
+        test various situation in which we pass docs(uuid) query
+        """
+        r = {
+            "documents": [
+                "1975CMaPh..43..199H",
+                "1973PhRvD...7.2333B"
+            ],
+            "metadata": {},
+            "solr": {},
+            "updates": {}
+        }
+        with mock.patch.object(self.app.client, 'get', return_value=r) as _m:
+            r = self.client.post(url_for('bigquery'), 
+                                 query_string={'q': 'docs(library/hHGU1Ef-TpacAhicI3J8kQ)'},
+                                 headers={'Authorization': 'Bearer foo'})
+        
+    
     def test_search(self):
         """
         Test the search endpoint

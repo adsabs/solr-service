@@ -26,4 +26,5 @@ SOLR_SERVICE_ALLOWED_FIELDS = [
 ]
 
 API_URL = 'http://adsws'
-QUERY_ENDPOINT = API_URL + '/vault/query' 
+VAULT_ENDPOINT = API_URL + '/vault/query' 
+LIBRARY_ENDPOINT = API_URL + '/biblib/libraries'

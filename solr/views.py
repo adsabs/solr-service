@@ -1,5 +1,5 @@
 from flask import current_app, request
-from flask.ext.restful import Resource, Exc
+from flask.ext.restful import Resource
 from flask.ext.discoverer import advertise
 import json
 from models import Limits
@@ -182,7 +182,7 @@ class SolrInterface(Resource):
     def _extract_docs_values(self, input):
         out = []
         i = 0
-        while input.find('docs(', i) != 1:
+        while input.find('docs(', i) > -1:
             i = input.index('docs(', i) + 5
             j = i
             while input[j] != ')' and j < len(input):
@@ -199,8 +199,14 @@ class SolrInterface(Resource):
         streams = set()
         for k,v in params.items():
             if 'q' in k: # well, i was laying - we'll only check params that *could* be a query
-                if 'docs(' in v:
-                    streams.update(self._extract_docs_values(v))
+                if isinstance(v, basestring):
+                    if 'docs(' in v:
+                        streams.update(self._extract_docs_values(v))
+                else:
+                    for x in v:
+                        if 'docs(' in x:
+                            streams.update(self._extract_docs_values(x))
+                
         if len(streams) == 0:
             return
         
@@ -214,24 +220,50 @@ class SolrInterface(Resource):
                 streams.remove(sn)
         
         # what is left is missing and we need to fill in the gaps
+        self._get_stream_data(list(streams), request)
+        
+    def _get_stream_data(self, streams, request):
         # TODO: it seems natural that this functionality could live inside
         # myads; there we'd be not forced to query a remote service; however
         # I fear that is not really what people are asking for - they just
         # want any/all queries to work when we say foo AND docs(barxxxx)
         
-        # TODO: introduce some conventions, as to code the origin of the ID?
-        # like 'library:xxxxx' and 'queryid:XXXXXX' ?
         
         for s in streams:
-            r = current_app.client.get(current_app.config['QUERY_ENDPOINT'],
-                               queryid=s)
-            r.raise_for_status()
-            q = r.json().get('query', {})
-            if s in q:
-                params[s] = q['query'][s] # TODO: encode in files/data?
+            if '/' in s:
+                prefix, value = s.split('/', 1)
             else:
-                raise Exception('Query relies on {} however such queryid is not available via API'.format(s))
+                prefix = ''
+                value = s
             
+            new_headers = {'Authorization': request.headers['Authorization']}
+            docs = None
+            
+            if prefix == 'library':
+                r = current_app.client.get(current_app.config['LIBRARY_ENDPOINT'] + '/' + value,
+                                           headers=new_headers)
+                r.raise_for_status()
+                q = r.json()
+                docs = 'bibcode\n' + '\n'.join(q['documents'])
+                
+            else:
+                r = current_app.client.get(current_app.config['VAULT_ENDPOINT'] + '/' + value,
+                                           headers=new_headers)
+                r.raise_for_status()
+                q = r.json()
+                if value in q['query']: # it is incoded in parameters
+                    docs = q['query'][value]
+                elif value['bigquery']: # this query has a bigquery, so it must be that
+                    docs = value['bigquery']
+                else: 
+                    raise Exception('Query relies on {} however such queryid is not available via API'.format(s))
+            
+            if request.data:
+                request.data[s] = docs
+            else:
+                request.files[s] = docs
+
+
 
 class Tvrh(SolrInterface):
     """Exposes the solr term-vector histogram endpoint"""
@@ -270,9 +302,6 @@ class BigQuery(SolrInterface):
 
         query, headers = self.cleanup_solr_request(payload)
 
-        self.check_for_embedded_bigquery(query, request)
-            
-
         if 'fq' not in query:
             query['fq'] = [u'{!bitset}']
         elif len(filter(lambda x: '!bitset' in x, query['fq'])) == 0:
@@ -280,6 +309,8 @@ class BigQuery(SolrInterface):
 
         if 'big-query' not in headers.get('Content-Type', ''):
             headers['Content-Type'] = 'big-query/csv'
+
+        self.check_for_embedded_bigquery(query, request)
 
         if request.data:
             current_app.logger.info("Dispatching 'POST' request to endpoint '{}'".format(current_app.config[self.handler]))
