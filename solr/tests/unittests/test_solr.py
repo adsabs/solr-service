@@ -14,6 +14,7 @@ from solr.tests.mocks import MockSolrResponse
 from views import SolrInterface
 from models import Limits, Base
 import mock
+from StringIO import StringIO
 
 class TestSolrInterface(TestCase):
 
@@ -21,7 +22,7 @@ class TestSolrInterface(TestCase):
         """Start the wsgi application"""
         a = app.create_app(**{
                'SQLALCHEMY_DATABASE_URI': 'sqlite://',
-               'SQLALCHEMY_ECHO': True,
+               'SQLALCHEMY_ECHO': False,
                'TESTING': True,
                'PROPAGATE_EXCEPTIONS': True,
                'TRAP_BAD_REQUEST_ERRORS': True,
@@ -291,7 +292,7 @@ class TestWebservices(TestCase):
         """
         test various situation in which we pass docs(uuid) query
         """
-        r = {
+        data = {
             "documents": [
                 "1975CMaPh..43..199H",
                 "1973PhRvD...7.2333B"
@@ -300,10 +301,86 @@ class TestWebservices(TestCase):
             "solr": {},
             "updates": {}
         }
-        with mock.patch.object(self.app.client, 'get', return_value=r) as _m:
+        din = mock.MagicMock()
+        din.raise_for_status = lambda: True
+        din.json = lambda: data
+        
+        out = mock.MagicMock()
+        out.text = ''
+        out.status_code = 200
+        out.headers = {}
+        
+        with mock.patch.object(self.app.client, 'get', return_value=din) as get, \
+            mock.patch.object(self.app.client, 'post', return_value=out) as post:
             r = self.client.post(url_for('bigquery'), 
                                  query_string={'q': 'docs(library/hHGU1Ef-TpacAhicI3J8kQ)'},
                                  headers={'Authorization': 'Bearer foo'})
+            # it made a request to retrieve library
+            get.assert_called()
+            assert '/biblib/libraries/hHGU1Ef-TpacAhicI3J8kQ' in get.call_args[0][0]
+            '/solr/bigquery' in post.call_args[0]
+            x = post.call_args[1]['files']['library/hHGU1Ef-TpacAhicI3J8kQ']
+            assert x[1].closed == True
+            assert x[2] == 'big-query/csv'
+        
+        data = {
+            'query': { },
+            'bigquery': 'something'
+        }
+        with mock.patch.object(self.app.client, 'get', return_value=din) as get, \
+            mock.patch.object(self.app.client, 'post', return_value=out) as post:
+            r = self.client.post(url_for('bigquery'), 
+                                 query_string={'q': 'docs(hHGU1Ef-TpacAhicI3J8kQ)'},
+                                 headers={'Authorization': 'Bearer foo'})
+            # it made a request to retrieve library
+            get.assert_called()
+            assert '/vault/query/hHGU1Ef-TpacAhicI3J8kQ' in get.call_args[0][0]
+            '/solr/bigquery' in post.call_args[0]
+            x = post.call_args[1]['files']['hHGU1Ef-TpacAhicI3J8kQ']
+            assert x[1].closed == True
+            assert x[2] == 'big-query/csv'
+            
+        
+        data = {
+            'query': { 'hHGU1Ef-TpacAhicI3J8kQ': 'foo bar' },
+            'bigquery': 'something'
+        }
+        with mock.patch.object(self.app.client, 'get', return_value=din) as get, \
+            mock.patch.object(self.app.client, 'post', return_value=out) as post:
+            r = self.client.post(url_for('bigquery'), 
+                                 query_string={'q': 'docs(hHGU1Ef-TpacAhicI3J8kQ)'},
+                                 headers={'Authorization': 'Bearer foo'})
+            # it made a request to retrieve library
+            get.assert_called()
+            assert '/vault/query/hHGU1Ef-TpacAhicI3J8kQ' in get.call_args[0][0]
+            '/solr/bigquery' in post.call_args[0]
+            
+            x = post.call_args[1]['files']['hHGU1Ef-TpacAhicI3J8kQ']
+            assert x[1].closed == True
+            assert x[2] == 'big-query/csv'
+            
+        
+        # we are sending another bigquery in data
+        with mock.patch.object(self.app.client, 'get', return_value=din) as get, \
+            mock.patch.object(self.app.client, 'post', return_value=out) as post:
+            r = self.client.post(url_for('bigquery'),
+                                 content_type='multipart/form-data',
+                                 data={
+                                     'q': '*:*',
+                                     'fq': 'docs(hHGU1Ef-TpacAhicI3J8kQ)',
+                                     'big': (StringIO('foo\nbar'), 'big-query/csv')
+                                     },
+                                 headers={'Authorization': 'Bearer foo'})
+            # it made a request to retrieve library
+            get.assert_called()
+            assert '/vault/query/hHGU1Ef-TpacAhicI3J8kQ' in get.call_args[0][0]
+            '/solr/bigquery' in post.call_args[0]
+            
+            x = post.call_args[1]['files']['hHGU1Ef-TpacAhicI3J8kQ']
+            assert x[1].closed == True
+            assert x[2] == 'big-query/csv'
+            
+            assert 'big' in post.call_args[1]['files']
         
     
     def test_search(self):
@@ -448,7 +525,7 @@ class TestWebservices(TestCase):
         self.assertTrue('compression' in resp.data)
         self.assertTrue('bitset' in resp.data)
 
-        # We only allow one content stream to be sent
+        # We now allow more content streams to be sent
         data = MultiDict([
             ('q', '*:*'),
             ('fl', 'bibcode'),
@@ -463,10 +540,8 @@ class TestWebservices(TestCase):
                 data=data
         )
 
-        self.assertEqual(resp.status_code, 400)
-        self.assertEqual(resp.json['error'],
-                         'You can only pass one content stream.')
-
+        self.assertEqual(resp.status_code, 200)
+        
 
 if __name__ == '__main__':
     unittest.main()

@@ -4,6 +4,13 @@ from flask.ext.discoverer import advertise
 import json
 from models import Limits
 from sqlalchemy import or_
+from werkzeug import MultiDict
+try:
+    from cStringIO import StringIO
+except:
+    from StringIO import StringIO
+from io import BytesIO
+
 
 class StatusView(Resource):
     """Returns the status of this app"""
@@ -253,15 +260,16 @@ class SolrInterface(Resource):
                 q = r.json()
                 if value in q['query']: # it is incoded in parameters
                     docs = q['query'][value]
-                elif value['bigquery']: # this query has a bigquery, so it must be that
-                    docs = value['bigquery']
+                elif q['bigquery']: # this query has a bigquery, so it must be that
+                    docs = q['bigquery']
                 else: 
                     raise Exception('Query relies on {} however such queryid is not available via API'.format(s))
             
             if request.data:
                 request.data[s] = docs
             else:
-                request.files[s] = docs
+                request.files = MultiDict(request.files.items())
+                request.files[s] = ClosingTuple((s, StringIO(docs), 'big-query/csv'))
 
 
 
@@ -346,3 +354,15 @@ def _safe_int(val, default=0):
         return int(val)
     except (ValueError, TypeError):
         return default
+
+
+class ClosingTuple(tuple):
+    """The sole raison d'etre of this class is to accommodate
+    Flask which wants to call close() on anything inside 
+    request.files; and to allow requests to use files
+    as (name, fileobj, mimetype)"""
+    def close(self):
+        for x in self:
+            if hasattr(x, 'close'):
+                x.close()
+        
