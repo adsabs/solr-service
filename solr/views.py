@@ -4,6 +4,12 @@ from flask.ext.discoverer import advertise
 import json
 from models import Limits
 from sqlalchemy import or_
+from werkzeug import MultiDict
+try:
+    from cStringIO import StringIO
+except:
+    from StringIO import StringIO
+from io import BytesIO
 import requests # Do not use current_app.client but requests, to avoid re-using
                 # connections from a pool which would make solr ingress nginx
                 # not set cookies with the affinity hash sroute
@@ -181,6 +187,93 @@ class SolrInterface(Resource):
         else:
             self._host = parts[0]
         return self._host
+    
+    def _extract_docs_values(self, input):
+        out = []
+        i = 0
+        while input.find('docs(', i) > -1:
+            i = input.index('docs(', i) + 5
+            j = i
+            while input[j] != ')' and j < len(input):
+                j += 1
+            out.append(input[i:j])
+            i = j + 1
+        return out
+    
+    def check_for_embedded_bigquery(self, params, request):
+        """Checks for the presence of docs() query any where inside 
+        the query parameters; if present - we'll verify/update
+        the query with data.
+        """
+        streams = set()
+        for k,v in params.items():
+            if 'q' in k: # well, i was laying - we'll only check params that *could* be a query
+                if isinstance(v, basestring):
+                    if 'docs(' in v:
+                        streams.update(self._extract_docs_values(v))
+                else:
+                    for x in v:
+                        if 'docs(' in x:
+                            streams.update(self._extract_docs_values(x))
+                
+        if len(streams) == 0:
+            return
+        
+        # must verify the input is there
+        for sn in streams:
+            if sn in params: # it can be in the parameters, which is OK...
+                streams.remove(sn)
+            elif request.data and sn in request.data: # it can be present as data
+                streams.remove(sn)
+            elif request.files and sn in request.files:
+                streams.remove(sn)
+        
+        # what is left is missing and we need to fill in the gaps
+        self._get_stream_data(list(streams), request)
+        
+    def _get_stream_data(self, streams, request):
+        # TODO: it seems natural that this functionality could live inside
+        # myads; there we'd be not forced to query a remote service; however
+        # I fear that is not really what people are asking for - they just
+        # want any/all queries to work when we say foo AND docs(barxxxx)
+        
+        
+        for s in streams:
+            if '/' in s:
+                prefix, value = s.split('/', 1)
+            else:
+                prefix = ''
+                value = s
+            
+            new_headers = {'Authorization': request.headers['Authorization']}
+            docs = None
+            
+            if prefix == 'library':
+                r = current_app.client.get(current_app.config['LIBRARY_ENDPOINT'] + '/' + value,
+                                           headers=new_headers)
+                r.raise_for_status()
+                q = r.json()
+                docs = 'bibcode\n' + '\n'.join(q['documents'])
+                
+            else:
+                r = current_app.client.get(current_app.config['VAULT_ENDPOINT'] + '/' + value,
+                                           headers=new_headers)
+                r.raise_for_status()
+                q = r.json()
+                if value in q['query']: # it is incoded in parameters
+                    docs = q['query'][value]
+                elif q['bigquery']: # this query has a bigquery, so it must be that
+                    docs = q['bigquery']
+                else: 
+                    raise Exception('Query relies on {} however such queryid is not available via API'.format(s))
+            
+            if request.data:
+                request.data[s] = docs
+            else:
+                request.files = MultiDict(request.files.items())
+                request.files[s] = ClosingTuple((s, StringIO(docs), 'big-query/csv'))
+
+
 
 class Tvrh(SolrInterface):
     """Exposes the solr term-vector histogram endpoint"""
@@ -219,13 +312,6 @@ class BigQuery(SolrInterface):
 
         query, headers = self.cleanup_solr_request(payload)
 
-        if request.files and \
-                sum([len(i) for i in request.files.listvalues()]) > 1:
-            message = "You can only pass one content stream."
-            current_app.logger.error(message)
-            return json.dumps(
-                {'error': message}), 400
-
         if 'fq' not in query:
             query['fq'] = [u'{!bitset}']
         elif len(filter(lambda x: '!bitset' in x, query['fq'])) == 0:
@@ -233,6 +319,8 @@ class BigQuery(SolrInterface):
 
         if 'big-query' not in headers.get('Content-Type', ''):
             headers['Content-Type'] = 'big-query/csv'
+
+        self.check_for_embedded_bigquery(query, request)
 
         if request.data:
             current_app.logger.info("Dispatching 'POST' request to endpoint '{}'".format(current_app.config[self.handler]))
@@ -268,3 +356,15 @@ def _safe_int(val, default=0):
         return int(val)
     except (ValueError, TypeError):
         return default
+
+
+class ClosingTuple(tuple):
+    """The sole raison d'etre of this class is to accommodate
+    Flask which wants to call close() on anything inside 
+    request.files; and to allow requests to use files
+    as (name, fileobj, mimetype)"""
+    def close(self):
+        for x in self:
+            if hasattr(x, 'close'):
+                x.close()
+        
