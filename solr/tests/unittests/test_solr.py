@@ -12,6 +12,7 @@ from werkzeug.datastructures import MultiDict
 from StringIO import StringIO
 from solr.tests.mocks import MockSolrResponse
 from views import SolrInterface
+from solr import views
 from models import Limits, Base
 import mock
 from StringIO import StringIO
@@ -311,7 +312,7 @@ class TestWebservices(TestCase):
         out.headers = {}
         
         with mock.patch.object(self.app.client, 'get', return_value=din) as get, \
-            mock.patch.object(self.app.client, 'post', return_value=out) as post:
+            mock.patch('solr.views.requests.post', return_value=out) as post:
             r = self.client.post(url_for('bigquery'), 
                                  query_string={'q': 'docs(library/hHGU1Ef-TpacAhicI3J8kQ)'},
                                  headers={'Authorization': 'Bearer foo'})
@@ -328,7 +329,7 @@ class TestWebservices(TestCase):
             'bigquery': 'something'
         }
         with mock.patch.object(self.app.client, 'get', return_value=din) as get, \
-            mock.patch.object(self.app.client, 'post', return_value=out) as post:
+            mock.patch('solr.views.requests.post', return_value=out) as post:
             r = self.client.post(url_for('bigquery'), 
                                  query_string={'q': 'docs(hHGU1Ef-TpacAhicI3J8kQ)'},
                                  headers={'Authorization': 'Bearer foo'})
@@ -346,7 +347,7 @@ class TestWebservices(TestCase):
             'bigquery': 'something'
         }
         with mock.patch.object(self.app.client, 'get', return_value=din) as get, \
-            mock.patch.object(self.app.client, 'post', return_value=out) as post:
+            mock.patch('solr.views.requests.post', return_value=out) as post:
             r = self.client.post(url_for('bigquery'), 
                                  query_string={'q': 'docs(hHGU1Ef-TpacAhicI3J8kQ)'},
                                  headers={'Authorization': 'Bearer foo'})
@@ -362,7 +363,7 @@ class TestWebservices(TestCase):
         
         # we are sending another bigquery in data
         with mock.patch.object(self.app.client, 'get', return_value=din) as get, \
-            mock.patch.object(self.app.client, 'post', return_value=out) as post:
+            mock.patch('solr.views.requests.post', return_value=out) as post:
             r = self.client.post(url_for('bigquery'),
                                  content_type='multipart/form-data',
                                  data={
