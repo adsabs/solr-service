@@ -10,7 +10,9 @@ try:
 except:
     from StringIO import StringIO
 from io import BytesIO
-
+import requests # Do not use current_app.client but requests, to avoid re-using
+                # connections from a pool which would make solr ingress nginx
+                # not set cookies with the affinity hash sroute
 
 class StatusView(Resource):
     """Returns the status of this app"""
@@ -34,7 +36,7 @@ class SolrInterface(Resource):
         query, headers = self.cleanup_solr_request(dict(request.args))
 
         current_app.logger.info("Dispatching 'POST' request to endpoint '{}'".format(current_app.config[self.handler]))
-        r = current_app.client.post(
+        r = requests.post(
             current_app.config[self.handler],
             data=query,
             headers=headers,
@@ -322,7 +324,7 @@ class BigQuery(SolrInterface):
 
         if request.data:
             current_app.logger.info("Dispatching 'POST' request to endpoint '{}'".format(current_app.config[self.handler]))
-            r = current_app.client.post(
+            r = requests.post(
                 current_app.config[self.handler],
                 params=query,
                 data=request.data,
@@ -332,7 +334,7 @@ class BigQuery(SolrInterface):
             current_app.logger.info("Received response from endpoint '{}' with status code '{}'".format(current_app.config[self.handler], r.status_code))
         elif request.files:
             current_app.logger.info("Dispatching 'POST' request to endpoint '{}'".format(current_app.config[self.handler]))
-            r = current_app.client.post(
+            r = requests.post(
                 current_app.config[self.handler],
                 params=query,
                 headers=headers,
