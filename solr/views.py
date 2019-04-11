@@ -223,13 +223,13 @@ class SolrInterface(Resource):
         for sn in streams:
             if sn in params: # it can be in the parameters, which is OK...
                 streams.remove(sn)
-            elif request.data and sn in request.data: # it can be present as data
+            elif request.data and not isinstance(request.data, basestring) and sn in request.data: # it can be present as data
                 streams.remove(sn)
             elif request.files and sn in request.files:
                 streams.remove(sn)
         
         # what is left is missing and we need to fill in the gaps
-        self._get_stream_data(list(streams), request)
+        return self._get_stream_data(list(streams), request)
         
     def _get_stream_data(self, streams, request):
         # TODO: it seems natural that this functionality could live inside
@@ -237,7 +237,7 @@ class SolrInterface(Resource):
         # I fear that is not really what people are asking for - they just
         # want any/all queries to work when we say foo AND docs(barxxxx)
         
-        
+        out = {}
         for s in streams:
             if '/' in s:
                 prefix, value = s.split('/', 1)
@@ -267,11 +267,9 @@ class SolrInterface(Resource):
                 else: 
                     raise Exception('Query relies on {} however such queryid is not available via API'.format(s))
             
-            if request.data:
-                request.data[s] = docs
-            else:
-                request.files = MultiDict(request.files.items())
-                request.files[s] = ClosingTuple((s, StringIO(docs), 'big-query/csv'))
+            out[s] = (s, docs, "big-query/csv")
+        
+        return out
 
 
 
@@ -309,36 +307,40 @@ class BigQuery(SolrInterface):
     def post(self):
         payload = dict(request.form)
         payload.update(request.args)
+        if request.is_json:
+            payload.update(request.json)
 
         query, headers = self.cleanup_solr_request(payload)
 
-        if 'fq' not in query:
-            query['fq'] = [u'{!bitset}']
-        elif len(filter(lambda x: '!bitset' in x, query['fq'])) == 0:
-            query['fq'].append(u'{!bitset}')
+        files = self.check_for_embedded_bigquery(query, request)
 
-        if 'big-query' not in headers.get('Content-Type', ''):
-            headers['Content-Type'] = 'big-query/csv'
-
-        self.check_for_embedded_bigquery(query, request)
-
-        if request.data:
+        if files and len(files) > 0:
+            del headers['Content-Type']
+            current_app.logger.info("Dispatching 'POST' request to endpoint '{}'".format(current_app.config[self.handler]))
+            r = requests.post(
+                current_app.config[self.handler],
+                params=query,
+                headers=headers,
+                files=files,
+                cookies=SolrInterface.set_cookies(request),
+            )
+            current_app.logger.info("Received response from endpoint '{}' with status code '{}'".format(current_app.config[self.handler], r.status_code))
+        elif request.data:
+            
+            if 'fq' not in query:
+                query['fq'] = [u'{!bitset}']
+            elif len(filter(lambda x: '!bitset' in x, query['fq'])) == 0:
+                query['fq'].append(u'{!bitset}')
+            
+            if 'big-query' not in headers.get('Content-Type', ''):
+                headers['Content-Type'] = 'big-query/csv'
+        
             current_app.logger.info("Dispatching 'POST' request to endpoint '{}'".format(current_app.config[self.handler]))
             r = requests.post(
                 current_app.config[self.handler],
                 params=query,
                 data=request.data,
                 headers=headers,
-                cookies=SolrInterface.set_cookies(request),
-            )
-            current_app.logger.info("Received response from endpoint '{}' with status code '{}'".format(current_app.config[self.handler], r.status_code))
-        elif request.files:
-            current_app.logger.info("Dispatching 'POST' request to endpoint '{}'".format(current_app.config[self.handler]))
-            r = requests.post(
-                current_app.config[self.handler],
-                params=query,
-                headers=headers,
-                files=request.files,
                 cookies=SolrInterface.set_cookies(request),
             )
             current_app.logger.info("Received response from endpoint '{}' with status code '{}'".format(current_app.config[self.handler], r.status_code))
