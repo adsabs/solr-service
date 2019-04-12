@@ -34,14 +34,36 @@ class SolrInterface(Resource):
 
     def get(self):
         query, headers = self.cleanup_solr_request(dict(request.args))
+        
+        # trickery, we can accept docs() operator if it is part of form data
+        # I tried to search whether it is a valid move to send multipart
+        # data with GET request, but I didn't see anything suggesting it is
+        # not possible; web clients/servers are probably dropping it
+        # here is an example with curl; the first one will not contain the file
+        
+        # curl 'http://httpbin.org/get?foo=bar' --form file=@/tmp/foo --trace-ascii /dev/stdout -X GET
+        # curl 'http://httpbin.org/post?foo=bar' --form file=@/tmp/foo --trace-ascii /dev/stdout -X POST
+        
+        # so I *think* this should be safe...
+        
+        files = self.check_for_embedded_bigquery(query, request, headers)
 
         current_app.logger.info("Dispatching 'POST' request to endpoint '{}'".format(current_app.config[self.handler]))
-        r = requests.post(
-            current_app.config[self.handler],
-            data=query,
-            headers=headers,
-            cookies=SolrInterface.set_cookies(request),
-        )
+        if files and len(files):
+            r = requests.post(
+                current_app.config[self.handler],
+                params=query,
+                headers=headers,
+                files=files,
+                cookies=SolrInterface.set_cookies(request),
+            )
+        else:
+            r = requests.post(
+                current_app.config[self.handler],
+                data=query,
+                headers=headers,
+                cookies=SolrInterface.set_cookies(request),
+            )
         current_app.logger.info("Received response from from endpoint '{}' with status code '{}'".format(current_app.config[self.handler], r.status_code))
         return r.text, r.status_code, r.headers
 
@@ -200,10 +222,13 @@ class SolrInterface(Resource):
             i = j + 1
         return out
     
-    def check_for_embedded_bigquery(self, params, request):
+    def check_for_embedded_bigquery(self, params, request, headers):
         """Checks for the presence of docs() query any where inside 
         the query parameters; if present - we'll verify/update
         the query with data.
+        
+        This function can also be used to process bigquery request
+        (i.e. no docs() operator is present)
         """
         streams = set()
         for k,v in params.items():
@@ -215,29 +240,60 @@ class SolrInterface(Resource):
                     for x in v:
                         if 'docs(' in x:
                             streams.update(self._extract_docs_values(x))
-                
-        if len(streams) == 0:
-            return
         
-        # must verify the input is there
-        for sn in streams:
-            if sn in params: # it can be in the parameters, which is OK...
-                streams.remove(sn)
-            elif request.data and not isinstance(request.data, basestring) and sn in request.data: # it can be present as data
-                streams.remove(sn)
-            elif request.files and sn in request.files:
-                streams.remove(sn)
+        # old-hack, bigquery can be passed without specifying 'fq' parameter
+        # we need to detect that situation and fill in the missing detail
+        if len(request.files) > 0:
+            if 'fq' not in params:
+                params['fq'] = [u'{!bitset}']
+            elif len(filter(lambda x: '!bitset' in x, params['fq'])) == 0:
+                params['fq'].append(u'{!bitset}')
+            
+        # another old-time fudgery, for bigquery we were setting ctype
+        # but when sending streams, this is not compatible (solr doesn't
+        # know how to parse them when the header is not multipart/form-data)
+        
+        if len(streams) > 0: 
+            # we'll be sending files; if bigquery was included
+            # proper headers must be set for it (we are not filling them) 
+            del headers['Content-Type']
+        elif len(request.files) > 0 and 'big-query' not in headers.get('Content-Type', ''):
+            # old-time situation - we will set the header
+            headers['Content-Type'] = 'big-query/csv'
+        
         
         # what is left is missing and we need to fill in the gaps
-        return self._get_stream_data(list(streams), request)
+        return self._get_stream_data(params, list(streams), request)
         
-    def _get_stream_data(self, streams, request):
+    def _get_stream_data(self, params, streams, request):
         # TODO: it seems natural that this functionality could live inside
         # myads; there we'd be not forced to query a remote service; however
         # I fear that is not really what people are asking for - they just
         # want any/all queries to work when we say foo AND docs(barxxxx)
         
         out = {}
+        
+        # must verify the input is not supplied and should be loaded
+        for sn in streams:
+            if sn in params: # it can be in the parameters, which is OK...
+                x = params[sn]
+                if isinstance(x, list) and len(x) > 0:
+                    x = x[0]
+                out[sn] = (sn, x, 'big-query/csv')
+                streams.remove(sn)
+                del params[sn]
+            elif request.data and not isinstance(request.data, basestring) and sn in request.data: # if data is a dict...
+                x = request.data[sn]
+                if isinstance(x, list) and len(x) > 0:
+                    x = x[0]
+                out[sn] = (sn, x, 'big-query/csv')
+                streams.remove(sn)
+            elif request.files and sn in request.files:
+                f = request.files[sn]
+                out[sn] = (f.name, f.stream, f.mimetype)
+                streams.remove(sn)
+                
+        
         for s in streams:
             if '/' in s:
                 prefix, value = s.split('/', 1)
@@ -269,6 +325,10 @@ class SolrInterface(Resource):
             
             out[s] = (s, docs, "big-query/csv")
         
+        # copy over remaining files 
+        for k,v in request.files.items():
+            if k not in out:
+                out[k] = (v.name, v.stream, v.mimetype)
         return out
 
 
@@ -312,10 +372,10 @@ class BigQuery(SolrInterface):
 
         query, headers = self.cleanup_solr_request(payload)
 
-        files = self.check_for_embedded_bigquery(query, request)
+        files = self.check_for_embedded_bigquery(query, request, headers)
 
         if files and len(files) > 0:
-            del headers['Content-Type']
+            
             current_app.logger.info("Dispatching 'POST' request to endpoint '{}'".format(current_app.config[self.handler]))
             r = requests.post(
                 current_app.config[self.handler],
@@ -326,14 +386,6 @@ class BigQuery(SolrInterface):
             )
             current_app.logger.info("Received response from endpoint '{}' with status code '{}'".format(current_app.config[self.handler], r.status_code))
         elif request.data:
-            
-            if 'fq' not in query:
-                query['fq'] = [u'{!bitset}']
-            elif len(filter(lambda x: '!bitset' in x, query['fq'])) == 0:
-                query['fq'].append(u'{!bitset}')
-            
-            if 'big-query' not in headers.get('Content-Type', ''):
-                headers['Content-Type'] = 'big-query/csv'
         
             current_app.logger.info("Dispatching 'POST' request to endpoint '{}'".format(current_app.config[self.handler]))
             r = requests.post(
