@@ -49,9 +49,9 @@ class SolrInterface(Resource):
         files = self.check_for_embedded_bigquery(query, request, headers)
 
         current_app.logger.info("Dispatching 'POST' request to endpoint '{}'".format(current_app.config[self.handler]))
-        if files and len(files):
+        if files and len(files): # must be directed to /bigquery
             r = requests.post(
-                current_app.config[self.handler],
+                current_app.config['SOLR_SERVICE_BIGQUERY_HANDLER'],
                 params=query,
                 headers=headers,
                 files=files,

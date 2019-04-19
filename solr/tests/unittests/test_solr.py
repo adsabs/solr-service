@@ -406,6 +406,7 @@ class TestWebservices(TestCase):
             assert get.called == False
             assert post.call_args[1]['files']['hHGU1Ef-TpacAhicI3J8kQ'][1] == 'hey joe'
             assert post.call_args[1]['files']['hHGU1Ef-TpacAhicI3J8kQ'][2] == 'big-query/csv'
+            assert '/solr/bigquery' in post.call_args[0][0]
             
                 
     
