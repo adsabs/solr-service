@@ -305,10 +305,7 @@ class SolrInterface(Resource):
             docs = None
             
             if prefix == 'library':
-                r = current_app.client.get(current_app.config['LIBRARY_ENDPOINT'] + '/' + value,
-                                           headers=new_headers)
-                r.raise_for_status()
-                q = r.json()
+                q = self._harvest_library(value, new_headers)
                 docs = 'bibcode\n' + '\n'.join(q['documents'])
                 
             else:
@@ -329,6 +326,40 @@ class SolrInterface(Resource):
         for k,v in request.files.items():
             if k not in out:
                 out[k] = (v.name, v.stream, v.mimetype)
+        return out
+    
+    def _harvest_library(self, library_id, headers):
+        """I looked inside the impl of the biblib/libraries
+        and unfortunately it is quite expensive; not only does
+        it make (automatic) bigquery to verify bibcodes with 
+        every request; it also loads *every time* set of all
+        bibcodes, even if it only returns section of it -
+        we would really do better if there existed an endpoint
+        that just returns all bibcodes saved in the library"""
+        
+        
+        maxr = current_app.config.get('BIBLIB_MAX_ROWS', 2000)
+        params = {'rows': maxr, 'start': 0}
+        out = {'documents': set(), 'library': library_id}
+        while True:
+            r = current_app.client.get(current_app.config['LIBRARY_ENDPOINT'] + '/' + library_id,
+                                       params=params,
+                                       headers=headers)
+            r.raise_for_status()
+            q = r.json()
+            oldcount = len(out['documents'])
+            out['documents'].update(q['documents'])
+            out['metadata'] = q['metadata']
+            
+            # all of these conditions because biblib doesn't guarantee stable sort order, sigh...
+            if 'num_documents' in out['metadata'] and out['metadata']['num_documents'] <= len(out['documents']) or \
+                len(q['documents']) < maxr or \
+                oldcount == len(out['documents']) or \
+                len(q['documents']) == 0:
+                break
+            
+            params['start'] = params['start'] + maxr
+            
         return out
 
 
