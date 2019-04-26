@@ -324,8 +324,8 @@ class TestWebservices(TestCase):
             assert x[2] == 'big-query/csv'
         
         data = {
-            'query': { },
-            'bigquery': 'something'
+            'query': json.dumps({'query': {'hHGU1Ef-TpacAhicI3J8kQ': 'foo bar'}, 
+                               'bigquery': 'something'})
         }
         with mock.patch.object(self.app.client, 'get', return_value=din) as get, \
             mock.patch('solr.views.requests.post', return_value=out) as post:
@@ -339,10 +339,10 @@ class TestWebservices(TestCase):
             x = post.call_args[1]['files']['hHGU1Ef-TpacAhicI3J8kQ']
             assert x[2] == 'big-query/csv'
             
-        
+
         data = {
-            'query': { 'hHGU1Ef-TpacAhicI3J8kQ': 'foo bar' },
-            'bigquery': 'something'
+            'query': json.dumps({'query': {'hHGU1Ef-TpacAhicI3J8kQ': 'foo bar'}, 
+                                 'bigquery': 'something'})
         }
         with mock.patch.object(self.app.client, 'get', return_value=din) as get, \
             mock.patch('solr.views.requests.post', return_value=out) as post:

@@ -312,11 +312,11 @@ class SolrInterface(Resource):
                 r = current_app.client.get(current_app.config['VAULT_ENDPOINT'] + '/' + value,
                                            headers=new_headers)
                 r.raise_for_status()
-                q = r.json()
+                q = json.loads(r.json()['query'])
                 if value in q['query']: # it is incoded in parameters
                     docs = q['query'][value]
-                elif q['bigquery']: # this query has a bigquery, so it must be that
-                    docs = q['bigquery']
+                elif 'bigquery' in q['query'] and q['query']['bigquery']: # this query has a bigquery, so it must be that
+                    docs = q['query']['bigquery']
                 else: 
                     raise Exception('Query relies on {} however such queryid is not available via API'.format(s))
             
