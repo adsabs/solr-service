@@ -324,7 +324,7 @@ class TestWebservices(TestCase):
             assert x[2] == 'big-query/csv'
         
         data = {
-            'query': json.dumps({'query': {'hHGU1Ef-TpacAhicI3J8kQ': 'foo bar'}, 
+            'query': json.dumps({'query': 'q=foo&hHGU1Ef-TpacAhicI3J8kQ=foo+bar', 
                                'bigquery': 'something'})
         }
         with mock.patch.object(self.app.client, 'get', return_value=din) as get, \
@@ -341,7 +341,7 @@ class TestWebservices(TestCase):
             
 
         data = {
-            'query': json.dumps({'query': {'hHGU1Ef-TpacAhicI3J8kQ': 'foo bar'}, 
+            'query': json.dumps({'query': 'q=foo&hHGU1Ef-TpacAhicI3J8kQ=foo+bar',
                                  'bigquery': 'something'})
         }
         with mock.patch.object(self.app.client, 'get', return_value=din) as get, \

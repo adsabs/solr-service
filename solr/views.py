@@ -10,6 +10,8 @@ try:
 except:
     from StringIO import StringIO
 from io import BytesIO
+from urlparse import parse_qs
+
 import requests # Do not use current_app.client but requests, to avoid re-using
                 # connections from a pool which would make solr ingress nginx
                 # not set cookies with the affinity hash sroute
@@ -312,11 +314,21 @@ class SolrInterface(Resource):
                 r = current_app.client.get(current_app.config['VAULT_ENDPOINT'] + '/' + value,
                                            headers=new_headers)
                 r.raise_for_status()
+                
+                # json serialized dictionary with two keys, 'query' and 'bigquery'
+                # their values are strings (for query urlencoded parameters)
                 q = json.loads(r.json()['query'])
-                if value in q['query']: # it is incoded in parameters
-                    docs = q['query'][value]
-                elif 'bigquery' in q['query'] and q['query']['bigquery']: # this query has a bigquery, so it must be that
-                    docs = q['query']['bigquery']
+                try:
+                    params = parse_qs(q['query'])
+                except:
+                    params = {}
+                
+                if value in params: # it is encoded in parameters
+                    docs = params[value]
+                    if isinstance(docs, list): # urlparsing can do that
+                        docs = docs[0]
+                elif 'bigquery' in q and q['bigquery']: # this query has a bigquery, so it must be that
+                    docs = q['bigquery']
                 else: 
                     raise Exception('Query relies on {} however such queryid is not available via API'.format(s))
             
