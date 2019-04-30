@@ -321,12 +321,11 @@ class TestWebservices(TestCase):
             assert '/biblib/libraries/hHGU1Ef-TpacAhicI3J8kQ' in get.call_args[0][0]
             '/solr/bigquery' in post.call_args[0]
             x = post.call_args[1]['files']['library/hHGU1Ef-TpacAhicI3J8kQ']
-            assert x[1].closed == True
             assert x[2] == 'big-query/csv'
         
         data = {
-            'query': { },
-            'bigquery': 'something'
+            'query': json.dumps({'query': 'q=foo&hHGU1Ef-TpacAhicI3J8kQ=foo+bar', 
+                               'bigquery': 'something'})
         }
         with mock.patch.object(self.app.client, 'get', return_value=din) as get, \
             mock.patch('solr.views.requests.post', return_value=out) as post:
@@ -338,13 +337,12 @@ class TestWebservices(TestCase):
             assert '/vault/query/hHGU1Ef-TpacAhicI3J8kQ' in get.call_args[0][0]
             '/solr/bigquery' in post.call_args[0]
             x = post.call_args[1]['files']['hHGU1Ef-TpacAhicI3J8kQ']
-            assert x[1].closed == True
             assert x[2] == 'big-query/csv'
             
-        
+
         data = {
-            'query': { 'hHGU1Ef-TpacAhicI3J8kQ': 'foo bar' },
-            'bigquery': 'something'
+            'query': json.dumps({'query': 'q=foo&hHGU1Ef-TpacAhicI3J8kQ=foo+bar',
+                                 'bigquery': 'something'})
         }
         with mock.patch.object(self.app.client, 'get', return_value=din) as get, \
             mock.patch('solr.views.requests.post', return_value=out) as post:
@@ -357,7 +355,6 @@ class TestWebservices(TestCase):
             '/solr/bigquery' in post.call_args[0]
             
             x = post.call_args[1]['files']['hHGU1Ef-TpacAhicI3J8kQ']
-            assert x[1].closed == True
             assert x[2] == 'big-query/csv'
             
         
@@ -369,7 +366,7 @@ class TestWebservices(TestCase):
                                  data={
                                      'q': '*:*',
                                      'fq': 'docs(hHGU1Ef-TpacAhicI3J8kQ)',
-                                     'big': (StringIO('foo\nbar'), 'big-query/csv')
+                                     'big': (StringIO('foo\nbar'), 'bigname', 'big-query/csv')
                                      },
                                  headers={'Authorization': 'Bearer foo'})
             # it made a request to retrieve library
@@ -377,12 +374,41 @@ class TestWebservices(TestCase):
             assert '/vault/query/hHGU1Ef-TpacAhicI3J8kQ' in get.call_args[0][0]
             '/solr/bigquery' in post.call_args[0]
             
-            x = post.call_args[1]['files']['hHGU1Ef-TpacAhicI3J8kQ']
-            assert x[1].closed == True
-            assert x[2] == 'big-query/csv'
+            assert post.call_args[1]['files']['hHGU1Ef-TpacAhicI3J8kQ'][1] == 'foo bar'
+            assert post.call_args[1]['files']['hHGU1Ef-TpacAhicI3J8kQ'][2] == 'big-query/csv'
             
-            assert 'big' in post.call_args[1]['files']
+            assert post.call_args[1]['files']['big'][1].closed == True
+            assert post.call_args[1]['files']['big'][2] == 'big-query/csv'
+            
         
+        # and also allowed for GET requests
+        with mock.patch.object(self.app.client, 'get', return_value=din) as get, \
+            mock.patch('solr.views.requests.post', return_value=out) as post:
+            r = self.client.get(url_for('search'), 
+                                 query_string={'q': 'docs(hHGU1Ef-TpacAhicI3J8kQ)'},
+                                 headers={'Authorization': 'Bearer foo'})
+            # it made a request to retrieve library
+            get.assert_called()
+            assert '/vault/query/hHGU1Ef-TpacAhicI3J8kQ' in get.call_args[0][0]
+            '/solr/bigquery' in post.call_args[0]
+            
+            assert post.call_args[1]['files']['hHGU1Ef-TpacAhicI3J8kQ'][1] == 'foo bar'
+            assert post.call_args[1]['files']['hHGU1Ef-TpacAhicI3J8kQ'][2] == 'big-query/csv'
+            
+        # GET request with data in params
+        with mock.patch.object(self.app.client, 'get', return_value=din) as get, \
+            mock.patch('solr.views.requests.post', return_value=out) as post:
+            r = self.client.get(url_for('search'), 
+                                 query_string={'q': 'docs(hHGU1Ef-TpacAhicI3J8kQ)', 
+                                               'hHGU1Ef-TpacAhicI3J8kQ': 'hey joe'},
+                                 headers={'Authorization': 'Bearer foo'})
+            # it made no request to retrieve library
+            assert get.called == False
+            assert post.call_args[1]['files']['hHGU1Ef-TpacAhicI3J8kQ'][1] == 'hey joe'
+            assert post.call_args[1]['files']['hHGU1Ef-TpacAhicI3J8kQ'][2] == 'big-query/csv'
+            assert '/solr/bigquery' in post.call_args[0][0]
+            
+                
     
     def test_search(self):
         """
@@ -391,6 +417,7 @@ class TestWebservices(TestCase):
         with MockSolrResponse(self.app.config['SOLR_SERVICE_SEARCH_HANDLER']):
             r = self.client.get(url_for('search'))
             self.assertIn('responseHeader', r.json)
+            
 
     @httpretty.activate
     def test_qtree(self):
@@ -490,7 +517,7 @@ class TestWebservices(TestCase):
                     'q': '*:*',
                     'fl': 'bibcode',
                     'fq': '{!bitset}',
-                    'file_field': (StringIO(bibcodes), 'big-query/csv')
+                    'file_field': (StringIO(bibcodes), 'file', 'big-query/csv')
                 }
         )
 
@@ -503,7 +530,7 @@ class TestWebservices(TestCase):
                 data={
                     'q': '*:*',
                     'fl': 'bibcode',
-                    'file_field': (StringIO(bibcodes), 'big-query/csv'),
+                    'file_field': (StringIO(bibcodes), 'filename', 'big-query/csv'),
                     }
         )
 
@@ -518,7 +545,7 @@ class TestWebservices(TestCase):
                     'q': '*:*',
                     'fl': 'bibcode',
                     'fq': '{compression = true}',
-                    'file_field': (StringIO(bibcodes), 'big-query/csv'),
+                    'file_field': (StringIO(bibcodes), 'filename', 'big-query/csv'),
                     }
         )
 
@@ -531,8 +558,8 @@ class TestWebservices(TestCase):
             ('q', '*:*'),
             ('fl', 'bibcode'),
             ('fq', '{!bitset}'),
-            ('file_field', (StringIO(bibcodes), 'big-query/csv')),
-            ('file_field', (StringIO(bibcodes), 'big-query/csv')),
+            ('file_field', (StringIO(bibcodes), 'filename', 'big-query/csv')),
+            ('file_field', (StringIO(bibcodes), 'filename', 'big-query/csv')),
         ])
 
         resp = self.client.post(
