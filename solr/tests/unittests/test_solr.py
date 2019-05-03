@@ -501,8 +501,8 @@ class TestWebservices(TestCase):
                 return 500, headers, "{'The query parameters were not passed properly'}"
             return 200, \
                    headers, \
-                   "The {0} response from {1}".format(
-                       request.method, uri
+                   "The {0} response from {1}:\n\n{2}".format(
+                       request.method, uri, request.body
                    )
 
         httpretty.register_uri(
@@ -523,7 +523,7 @@ class TestWebservices(TestCase):
 
         self.assertEqual(resp.status_code, 200)
 
-        # Missing 'fq' parameter
+        # Missing 'fq' parameter is not filled
         resp = self.client.post(
                 url_for('bigquery'),
                 content_type='multipart/form-data',
@@ -535,23 +535,38 @@ class TestWebservices(TestCase):
         )
 
         self.assertEqual(resp.status_code, 200)
-        self.assertTrue('bitset' in resp.data)
+        self.assertTrue('bitset' not in resp.data)
+        self.assertTrue("Content-Disposition: form-data; name=\"file_field\"; filename=\"file_field\"\r\nContent-Type: big-query/csv" in resp.data)
+        
+        
+        # Missing 'fq' parameter is filled in - but only when data (request.post(data=...)
+        # is used (flask testing client is absolutely asinine api)
+        resp = self.client.post(
+                url_for('bigquery'),
+                data=bibcodes,
+                query_string='q=*:*&fl=bibcode'
+        )
+        
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue('fq=%7B%21bitset%7D' in resp.data)
+        self.assertTrue("Content-Disposition: form-data; name=\"old-bad-behaviour\"; filename=\"old-bad-behaviour\"\r\nContent-Type: big-query/csv" in resp.data)
+        
+        
 
-        # 'fq' without bitset
+        # 'fq' with additional params specified
         resp = self.client.post(
                 url_for('bigquery'),
                 content_type='multipart/form-data',
                 data={
                     'q': '*:*',
                     'fl': 'bibcode',
-                    'fq': '{compression = true}',
+                    'fq': '{!bitset compression = true}',
                     'file_field': (StringIO(bibcodes), 'filename', 'big-query/csv'),
                     }
         )
 
         self.assertEqual(resp.status_code, 200)
-        self.assertTrue('compression' in resp.data)
-        self.assertTrue('bitset' in resp.data)
+        self.assertTrue('fq=%7B%21bitset+compression+%3D+true%7D' in resp.data)
 
         # We now allow more content streams to be sent
         data = MultiDict([
