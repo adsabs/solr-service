@@ -234,7 +234,7 @@ class SolrInterface(Resource):
         """
         streams = set()
         for k,v in params.items():
-            if 'q' in k: # well, i was laying - we'll only check params that *could* be a query
+            if 'q' in k: # well, i was lying - we'll only check params that *could* be a query
                 if isinstance(v, basestring):
                     if 'docs(' in v:
                         streams.update(self._extract_docs_values(v))
@@ -245,27 +245,28 @@ class SolrInterface(Resource):
         
         # old-hack, bigquery can be passed without specifying 'fq' parameter
         # we need to detect that situation and fill in the missing detail
-        if len(request.files) > 0:
+        # this is only accepted if the data was passed in request.data
+        # if user tried to send the data with anonymous request.fiel stream
+        # they must set the appropriate headers
+        if request.data and isinstance(request.data, basestring) and len(request.data) > 0:
             if 'fq' not in params:
                 params['fq'] = [u'{!bitset}']
             elif len(filter(lambda x: '!bitset' in x, params['fq'])) == 0:
                 params['fq'].append(u'{!bitset}')
             
-        # another old-time fudgery, for bigquery we were setting ctype
-        # but when sending streams, this is not compatible (solr doesn't
-        # know how to parse them when the header is not multipart/form-data)
-        
-        if len(streams) > 0: 
-            # we'll be sending files; if bigquery was included
-            # proper headers must be set for it (we are not filling them) 
-            del headers['Content-Type']
-        elif len(request.files) > 0 and 'big-query' not in headers.get('Content-Type', ''):
-            # old-time situation - we will set the header
-            headers['Content-Type'] = 'big-query/csv'
+            # we'll package request.data into files
+            streams.add('old-bad-behaviour')
+            params['old-bad-behaviour'] = request.data
         
         
         # what is left is missing and we need to fill in the gaps
-        return self._get_stream_data(params, list(streams), request)
+        files = self._get_stream_data(params, list(streams), request)
+        
+        # let requests library pick the appropriate ctype
+        if len(files):
+            del headers['Content-Type']
+            
+        return files
         
     def _get_stream_data(self, params, streams, request):
         # TODO: it seems natural that this functionality could live inside
@@ -414,11 +415,9 @@ class BigQuery(SolrInterface):
             payload.update(request.json)
 
         query, headers = self.cleanup_solr_request(payload)
-
         files = self.check_for_embedded_bigquery(query, request, headers)
 
         if files and len(files) > 0:
-            
             current_app.logger.info("Dispatching 'POST' request to endpoint '{}'".format(current_app.config[self.handler]))
             r = requests.post(
                 current_app.config[self.handler],
@@ -427,18 +426,7 @@ class BigQuery(SolrInterface):
                 files=files,
                 cookies=SolrInterface.set_cookies(request),
             )
-            current_app.logger.info("Received response from endpoint '{}' with status code '{}'".format(current_app.config[self.handler], r.status_code))
-        elif request.data:
-        
-            current_app.logger.info("Dispatching 'POST' request to endpoint '{}'".format(current_app.config[self.handler]))
-            r = requests.post(
-                current_app.config[self.handler],
-                params=query,
-                data=request.data,
-                headers=headers,
-                cookies=SolrInterface.set_cookies(request),
-            )
-            current_app.logger.info("Received response from endpoint '{}' with status code '{}'".format(current_app.config[self.handler], r.status_code))
+            current_app.logger.info("Received response from endpoint '{}' with status code '{}'".format(current_app.config[self.handler], r.status_code))    
         else:
             message = "Malformed request"
             current_app.logger.error(message)
