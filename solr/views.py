@@ -144,9 +144,6 @@ class SolrInterface(Resource):
 
         payload['wt'] = 'json'
         max_rows = current_app.config.get('SOLR_SERVICE_MAX_ROWS', 100)
-        max_rows *= float(
-            request.headers.get('X-Adsws-Ratelimit-Level', 1.0)
-        )
         max_rows = int(max_rows)
 
 

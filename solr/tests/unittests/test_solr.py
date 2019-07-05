@@ -263,8 +263,7 @@ class TestWebservices(TestCase):
 
     def test_set_max_rows(self):
         """
-        solr should only return up to a default number of documents multiplied
-        by the user's ratelimit-level, if applicable
+        solr should only return up to a default number of documents
         """
         with MockSolrResponse(self.app.config.get('SOLR_SERVICE_SEARCH_HANDLER')):
 
@@ -286,7 +285,7 @@ class TestWebservices(TestCase):
                 query_string={'q': '*', 'rows': 10},
                 headers={'X-Adsws-Ratelimit-Level': '10'}
             )
-            self.assertEqual(len(r.json['response']['docs']), 7)
+            self.assertEqual(len(r.json['response']['docs']), 2)
 
     
     def test_docs_subquery(self):
