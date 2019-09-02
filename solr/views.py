@@ -1,6 +1,11 @@
 from flask import current_app, request
 from flask.ext.restful import Resource
 from flask.ext.discoverer import advertise
+try:
+    from flask_login import current_user
+except:
+    # If solr service is not shipped with adsws, this will fail and it is ok
+    pass
 import json
 from models import Limits
 from sqlalchemy import or_
@@ -36,21 +41,29 @@ class SolrInterface(Resource):
 
     def get(self):
         query, headers = self.cleanup_solr_request(dict(request.args))
-        
+
         # trickery, we can accept docs() operator if it is part of form data
         # I tried to search whether it is a valid move to send multipart
         # data with GET request, but I didn't see anything suggesting it is
         # not possible; web clients/servers are probably dropping it
         # here is an example with curl; the first one will not contain the file
-        
+
         # curl 'http://httpbin.org/get?foo=bar' --form file=@/tmp/foo --trace-ascii /dev/stdout -X GET
         # curl 'http://httpbin.org/post?foo=bar' --form file=@/tmp/foo --trace-ascii /dev/stdout -X POST
-        
+
         # so I *think* this should be safe...
-        
+
         files = self.check_for_embedded_bigquery(query, request, headers)
 
-        current_app.logger.info("Dispatching 'POST' request to endpoint '{}'".format(current_app.config[self.handler]))
+        try:
+            current_user_id = current_user.get_id()
+        except:
+            # If solr service is not shipped with adsws, this will fail and it is ok
+            current_user_id = None
+        if current_user_id:
+            current_app.logger.info("Dispatching 'POST' request to endpoint '{}' for user '{}'".format(current_app.config[self.handler], current_user_id))
+        else:
+            current_app.logger.info("Dispatching 'POST' request to endpoint '{}'".format(current_app.config[self.handler]))
         if files and len(files): # must be directed to /bigquery
             r = requests.post(
                 current_app.config['SOLR_SERVICE_BIGQUERY_HANDLER'],
@@ -208,7 +221,7 @@ class SolrInterface(Resource):
         else:
             self._host = parts[0]
         return self._host
-    
+
     def _extract_docs_values(self, input):
         out = []
         i = 0
@@ -220,12 +233,12 @@ class SolrInterface(Resource):
             out.append(input[i:j])
             i = j + 1
         return out
-    
+
     def check_for_embedded_bigquery(self, params, request, headers):
-        """Checks for the presence of docs() query any where inside 
+        """Checks for the presence of docs() query any where inside
         the query parameters; if present - we'll verify/update
         the query with data.
-        
+
         This function can also be used to process bigquery request
         (i.e. no docs() operator is present)
         """
@@ -239,7 +252,7 @@ class SolrInterface(Resource):
                     for x in v:
                         if 'docs(' in x:
                             streams.update(self._extract_docs_values(x))
-        
+
         # old-hack, bigquery can be passed without specifying 'fq' parameter
         # we need to detect that situation and fill in the missing detail
         # this is only accepted if the data was passed in request.data
@@ -250,29 +263,29 @@ class SolrInterface(Resource):
                 params['fq'] = [u'{!bitset}']
             elif len(filter(lambda x: '!bitset' in x, params['fq'])) == 0:
                 params['fq'].append(u'{!bitset}')
-            
+
             # we'll package request.data into files
             streams.add('old-bad-behaviour')
             params['old-bad-behaviour'] = request.data
-        
-        
+
+
         # what is left is missing and we need to fill in the gaps
         files = self._get_stream_data(params, list(streams), request)
-        
+
         # let requests library pick the appropriate ctype
         if len(files):
             del headers['Content-Type']
-            
+
         return files
-        
+
     def _get_stream_data(self, params, streams, request):
         # TODO: it seems natural that this functionality could live inside
         # myads; there we'd be not forced to query a remote service; however
         # I fear that is not really what people are asking for - they just
         # want any/all queries to work when we say foo AND docs(barxxxx)
-        
+
         out = {}
-        
+
         # must verify the input is not supplied and should be loaded
         for sn in streams:
             if sn in params: # it can be in the parameters, which is OK...
@@ -292,27 +305,27 @@ class SolrInterface(Resource):
                 f = request.files[sn]
                 out[sn] = (f.name, f.stream, f.mimetype)
                 streams.remove(sn)
-                
-        
+
+
         for s in streams:
             if '/' in s:
                 prefix, value = s.split('/', 1)
             else:
                 prefix = ''
                 value = s
-            
+
             new_headers = {'Authorization': request.headers['Authorization']}
             docs = None
-            
+
             if prefix == 'library':
                 q = self._harvest_library(value, new_headers)
                 docs = 'bibcode\n' + '\n'.join(q['documents'])
-                
+
             else:
                 r = current_app.client.get(current_app.config['VAULT_ENDPOINT'] + '/' + value,
                                            headers=new_headers)
                 r.raise_for_status()
-                
+
                 # json serialized dictionary with two keys, 'query' and 'bigquery'
                 # their values are strings (for query urlencoded parameters)
                 q = json.loads(r.json()['query'])
@@ -320,34 +333,34 @@ class SolrInterface(Resource):
                     params = parse_qs(q['query'])
                 except:
                     params = {}
-                
+
                 if value in params: # it is encoded in parameters
                     docs = params[value]
                     if isinstance(docs, list): # urlparsing can do that
                         docs = docs[0]
                 elif 'bigquery' in q and q['bigquery']: # this query has a bigquery, so it must be that
                     docs = q['bigquery']
-                else: 
+                else:
                     raise Exception('Query relies on {} however such queryid is not available via API'.format(s))
-            
+
             out[s] = (s, docs, "big-query/csv")
-        
-        # copy over remaining files 
+
+        # copy over remaining files
         for k,v in request.files.items():
             if k not in out:
                 out[k] = (v.name, v.stream, v.mimetype)
         return out
-    
+
     def _harvest_library(self, library_id, headers):
         """I looked inside the impl of the biblib/libraries
         and unfortunately it is quite expensive; not only does
-        it make (automatic) bigquery to verify bibcodes with 
+        it make (automatic) bigquery to verify bibcodes with
         every request; it also loads *every time* set of all
         bibcodes, even if it only returns section of it -
         we would really do better if there existed an endpoint
         that just returns all bibcodes saved in the library"""
-        
-        
+
+
         maxr = current_app.config.get('BIBLIB_MAX_ROWS', 2000)
         params = {'rows': maxr, 'start': 0}
         out = {'documents': set(), 'library': library_id}
@@ -360,16 +373,16 @@ class SolrInterface(Resource):
             oldcount = len(out['documents'])
             out['documents'].update(q['documents'])
             out['metadata'] = q['metadata']
-            
+
             # all of these conditions because biblib doesn't guarantee stable sort order, sigh...
             if 'num_documents' in out['metadata'] and out['metadata']['num_documents'] <= len(out['documents']) or \
                 len(q['documents']) < maxr or \
                 oldcount == len(out['documents']) or \
                 len(q['documents']) == 0:
                 break
-            
+
             params['start'] = params['start'] + maxr
-            
+
         return out
 
 
@@ -415,7 +428,15 @@ class BigQuery(SolrInterface):
         files = self.check_for_embedded_bigquery(query, request, headers)
 
         if files and len(files) > 0:
-            current_app.logger.info("Dispatching 'POST' request to endpoint '{}'".format(current_app.config[self.handler]))
+            try:
+                current_user_id = current_user.get_id()
+            except:
+                # If solr service is not shipped with adsws, this will fail and it is ok
+                current_user_id = None
+            if current_user_id:
+                current_app.logger.info("Dispatching 'POST' request to endpoint '{}' for user '{}'".format(current_app.config[self.handler], current_user_id))
+            else:
+                current_app.logger.info("Dispatching 'POST' request to endpoint '{}'".format(current_app.config[self.handler]))
             r = requests.post(
                 current_app.config[self.handler],
                 params=query,
@@ -423,7 +444,7 @@ class BigQuery(SolrInterface):
                 files=files,
                 cookies=SolrInterface.set_cookies(request),
             )
-            current_app.logger.info("Received response from endpoint '{}' with status code '{}'".format(current_app.config[self.handler], r.status_code))    
+            current_app.logger.info("Received response from endpoint '{}' with status code '{}'".format(current_app.config[self.handler], r.status_code))
         else:
             message = "Malformed request"
             current_app.logger.error(message)
@@ -442,11 +463,11 @@ def _safe_int(val, default=0):
 
 class ClosingTuple(tuple):
     """The sole raison d'etre of this class is to accommodate
-    Flask which wants to call close() on anything inside 
+    Flask which wants to call close() on anything inside
     request.files; and to allow requests to use files
     as (name, fileobj, mimetype)"""
     def close(self):
         for x in self:
             if hasattr(x, 'close'):
                 x.close()
-        
+
