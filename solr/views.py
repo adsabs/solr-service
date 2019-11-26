@@ -152,8 +152,10 @@ class SolrInterface(Resource):
 
         if 'X-Amzn-Trace-Id' in request.headers:
             payload['x-amzn-trace-id'] = request.headers['X-Amzn-Trace-Id']
+            headers['X-Amzn-Trace-Id'] = request.headers['X-Amzn-Trace-Id']
         elif 'x-amzn-trace-id' in request.headers:
             payload['x-amzn-trace-id'] = request.headers['x-amzn-trace-id']
+            headers['X-Amzn-Trace-Id'] = request.headers['x-amzn-trace-id']
 
         payload['wt'] = 'json'
         max_rows = current_app.config.get('SOLR_SERVICE_MAX_ROWS', 100)
