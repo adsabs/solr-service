@@ -40,8 +40,8 @@ class SolrInterface(Resource):
         self._host = None
         self.internal_logging_params = {
             'X-Amzn-Trace-Id': 'Root=-',
-            'Authorization': 'Bearer:-',
-            'X-Forwarded-Authorization': 'Bearer:-',
+            'Authorization': '-',
+            'X-Forwarded-Authorization': '-',
         } # Pass to solr/clean from response, only for logging purposes
 
     def get(self):
