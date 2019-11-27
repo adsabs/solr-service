@@ -38,6 +38,7 @@ class SolrInterface(Resource):
     def __init__(self, *args, **kwargs):
         Resource.__init__(self, *args, **kwargs)
         self._host = None
+        self.internal_logging_params = ('X-Amzn-Trace-Id', 'Authorization', 'X-Forwarded-Authorization') # Pass to solr/clean from response, only for logging purposes
 
     def get(self):
         query, headers = self.cleanup_solr_request(dict(request.args))
@@ -80,7 +81,7 @@ class SolrInterface(Resource):
                 cookies=SolrInterface.set_cookies(request),
             )
         current_app.logger.info("Received response from from endpoint '{}' with status code '{}'".format(current_app.config[self.handler], r.status_code))
-        return r.text, r.status_code, r.headers
+        return self.cleanup_solr_response_text(r.text), r.status_code, r.headers
 
     @staticmethod
     def set_cookies(request):
@@ -126,6 +127,19 @@ class SolrInterface(Resource):
                     payload['fl'] = fl
             session.commit()
 
+    def cleanup_solr_response_text(self, text):
+        """
+        Remove internal logging parameters from solr response
+        """
+        try:
+            r = json.loads(text)
+            params = r.get('responseHeader', {}).get('params', {})
+            for internal_param in self.internal_logging_params:
+                params.pop(internal_param, None)
+            clean_text = unicode(json.dumps(r)+'\n')
+            return clean_text
+        except:
+            return text
 
     def cleanup_solr_request(self, payload, user_id=None):
         """
@@ -147,15 +161,12 @@ class SolrInterface(Resource):
             _h = 'application/x-www-form-urlencoded'
         headers['Content-Type'] =  _h
 
-        # trace id and Host header are important for proper routing/logging
+        # trace id, Host, token header are important for proper routing/logging
         headers['Host'] = self.get_host(current_app.config.get(self.handler))
-
-        if 'X-Amzn-Trace-Id' in request.headers:
-            payload['x-amzn-trace-id'] = request.headers['X-Amzn-Trace-Id']
-            headers['X-Amzn-Trace-Id'] = request.headers['X-Amzn-Trace-Id']
-        elif 'x-amzn-trace-id' in request.headers:
-            payload['x-amzn-trace-id'] = request.headers['x-amzn-trace-id']
-            headers['X-Amzn-Trace-Id'] = request.headers['x-amzn-trace-id']
+        for internal_param in self.internal_logging_params:
+            if internal_param in request.headers:
+                payload[internal_param] = request.headers[internal_param]
+                headers[internal_param] = request.headers[internal_param]
 
         payload['wt'] = 'json'
         max_rows = current_app.config.get('SOLR_SERVICE_MAX_ROWS', 100)
@@ -317,6 +328,11 @@ class SolrInterface(Resource):
                 value = s
 
             new_headers = {'Authorization': request.headers['Authorization']}
+            # trace id, Host, token header are important for proper routing/logging
+            new_headers['Host'] = self.get_host(current_app.config.get(self.handler))
+            for internal_param in self.internal_logging_params:
+                if internal_param in request.headers:
+                    new_headers[internal_param] = request.headers[internal_param]
             docs = None
 
             if prefix == 'library':
@@ -451,7 +467,7 @@ class BigQuery(SolrInterface):
             message = "Malformed request"
             current_app.logger.error(message)
             return json.dumps({'error': message}), 400
-        return r.text, r.status_code, r.headers
+        return self.cleanup_solr_response_text(r.text), r.status_code, r.headers
 
 
 def _safe_int(val, default=0):
