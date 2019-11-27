@@ -38,7 +38,11 @@ class SolrInterface(Resource):
     def __init__(self, *args, **kwargs):
         Resource.__init__(self, *args, **kwargs)
         self._host = None
-        self.internal_logging_params = ('X-Amzn-Trace-Id', 'Authorization', 'X-Forwarded-Authorization') # Pass to solr/clean from response, only for logging purposes
+        self.internal_logging_params = {
+            'X-Amzn-Trace-Id': 'Root=-',
+            'Authorization': 'Bearer:-',
+            'X-Forwarded-Authorization': 'Bearer:-',
+        } # Pass to solr/clean from response, only for logging purposes
 
     def get(self):
         query, headers = self.cleanup_solr_request(dict(request.args))
@@ -134,7 +138,7 @@ class SolrInterface(Resource):
         try:
             r = json.loads(text)
             params = r.get('responseHeader', {}).get('params', {})
-            for internal_param in self.internal_logging_params:
+            for internal_param in self.internal_logging_params.keys():
                 params.pop(internal_param, None)
             clean_text = unicode(json.dumps(r)+'\n')
             return clean_text
@@ -163,10 +167,13 @@ class SolrInterface(Resource):
 
         # trace id, Host, token header are important for proper routing/logging
         headers['Host'] = self.get_host(current_app.config.get(self.handler))
-        for internal_param in self.internal_logging_params:
+        for internal_param, default in self.internal_logging_params.iteritems():
             if internal_param in request.headers:
                 payload[internal_param] = request.headers[internal_param]
                 headers[internal_param] = request.headers[internal_param]
+            else:
+                # Make sure solr always reports the parameter to facilitate regex logging parsing
+                payload[internal_param] = default
 
         payload['wt'] = 'json'
         max_rows = current_app.config.get('SOLR_SERVICE_MAX_ROWS', 100)
@@ -330,9 +337,10 @@ class SolrInterface(Resource):
             new_headers = {'Authorization': request.headers['Authorization']}
             # trace id, Host, token header are important for proper routing/logging
             new_headers['Host'] = self.get_host(current_app.config.get(self.handler))
-            for internal_param in self.internal_logging_params:
+            for internal_param in self.internal_logging_params.keys():
                 if internal_param in request.headers:
                     new_headers[internal_param] = request.headers[internal_param]
+
             docs = None
 
             if prefix == 'library':
