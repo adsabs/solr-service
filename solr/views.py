@@ -166,15 +166,15 @@ class SolrInterface(Resource):
 
         # trace id, Host, token header are important for proper routing/logging
         headers['Host'] = self.get_host(current_app.config.get(self.handler))
-        internal_logging = {}
+        internal_logging = []
         for internal_param, default in self.internal_logging_params.iteritems():
             if internal_param in request.headers:
-                internal_logging[internal_param] = request.headers[internal_param]
+                internal_logging.append("{}={}".format(internal_param, request.headers[internal_param]))
                 headers[internal_param] = request.headers[internal_param]
             else:
                 # Make sure solr always reports the parameter to facilitate regex logging parsing
-                internal_logging[internal_param] = default
-        payload['internal_logging_params'] = json.dumps(internal_logging, sort_keys=True)
+                internal_logging.append("{}={}".format(internal_param, default))
+        payload['internal_logging_params'] = ";".join(internal_logging)
 
         payload['wt'] = 'json'
         max_rows = current_app.config.get('SOLR_SERVICE_MAX_ROWS', 100)
