@@ -138,8 +138,7 @@ class SolrInterface(Resource):
         try:
             r = json.loads(text)
             params = r.get('responseHeader', {}).get('params', {})
-            for internal_param in self.internal_logging_params.keys():
-                params.pop(internal_param, None)
+            params.pop('internal_logging_params')
             clean_text = unicode(json.dumps(r)+'\n')
             return clean_text
         except:
@@ -167,13 +166,15 @@ class SolrInterface(Resource):
 
         # trace id, Host, token header are important for proper routing/logging
         headers['Host'] = self.get_host(current_app.config.get(self.handler))
+        internal_logging = {}
         for internal_param, default in self.internal_logging_params.iteritems():
             if internal_param in request.headers:
-                payload[internal_param] = request.headers[internal_param]
+                internal_logging[internal_param] = request.headers[internal_param]
                 headers[internal_param] = request.headers[internal_param]
             else:
                 # Make sure solr always reports the parameter to facilitate regex logging parsing
-                payload[internal_param] = default
+                internal_logging[internal_param] = default
+        payload['internal_logging_params'] = json.dumps(internal_logging, sort_keys=True)
 
         payload['wt'] = 'json'
         max_rows = current_app.config.get('SOLR_SERVICE_MAX_ROWS', 100)
