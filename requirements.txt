@@ -1,2 +1,2 @@
-git+https://github.com/adsabs/ADSMicroserviceUtils.git@v1.1.3
+git+https://github.com/adsabs/ADSMicroserviceUtils.git@v1.1.4
 alembic==0.8.1
