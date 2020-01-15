@@ -107,7 +107,7 @@ class SolrInterface(Resource):
         else:
             return None
 
-    def apply_protective_filters(self, payload, user_id, protected_fields):
+    def apply_protective_filters(self, payload, user_id, protected_fields, key):
         """
         Adds filters to the query that should limit results to conditions
         that are associted with the user_id+protected_field. If a field is
@@ -116,12 +116,24 @@ class SolrInterface(Resource):
         :param payload: raw request payload
         :param user_id: string, user id as known to ADS API
         :param protected_fields: list of strings, fields
+        :param key: string, name of the field we are currently processing
+            (typically 'fl', but could be 'anything.fl' when dealing 
+            with subrequests)
         """
-        fl = payload.get('fl', 'id')
-        fq = payload.get('fq', [])
+        fl = payload.get(key, 'id')
+        if key == 'fl':
+            fq = payload.get('fq', [])
+            fq_key = 'fq'
+        else:
+            prefix = key.rsplit('.', 1)[0]
+            fq_key = '%s.fq' % (prefix)
+            fq = payload.get(fq_key, [])
+
+            
         if not isinstance(fq, list):
             fq = [fq]
-        payload['fq'] = fq
+
+        payload[fq_key] = fq
 
         with current_app.session_scope() as session:
             for f in session.query(Limits).filter(Limits.uid==user_id, or_(Limits.field==x for x in protected_fields)).all():
@@ -174,19 +186,14 @@ class SolrInterface(Resource):
             else:
                 # Make sure solr always reports the parameter to facilitate regex logging parsing
                 internal_logging.append("{}={}".format(internal_param, default))
+
         payload['internal_logging_params'] = ";".join(internal_logging)
-
         payload['wt'] = 'json'
-        max_rows = current_app.config.get('SOLR_SERVICE_MAX_ROWS', 100)
-        max_rows = int(max_rows)
 
 
-        # Ensure there is a single rows value and that it does not bypass the max rows limit
-        rows = current_app.config.get('SOLR_SERVICE_DEFAULT_ROWS', 10)
-        if 'rows' in payload:
-            rows = _safe_int(payload['rows'], default=max_rows)
-        rows = min(rows, max_rows)
-        payload['rows'] = rows
+        # Ensure there is a single rows 
+        if 'rows' not in payload:
+            payload['rows'] = current_app.config.get('SOLR_SERVICE_DEFAULT_ROWS', 10)
 
         # Ensure there is a single start value
         start = 0
@@ -194,31 +201,9 @@ class SolrInterface(Resource):
             start = _safe_int(payload['start'], default=0)
         payload['start'] = start
 
-        # we disallow 'return everything'
+        # Ensure there is one fl value
         if 'fl' not in payload:
             payload['fl'] = 'id'
-        else:
-            fields = []
-            for y in payload['fl']:
-                fields.extend([i.strip().lower() for i in y.split(',')])
-
-            disallowed = current_app.config.get(
-                'SOLR_SERVICE_DISALLOWED_FIELDS'
-            )
-
-            protected_fields = []
-            if disallowed:
-                protected_fields = filter(lambda x: x in disallowed, fields)
-                fields = filter(lambda x: x not in disallowed, fields)
-
-            if len(fields) == 0:
-                fields.append('id')
-            if '*' in fields:
-                fields = current_app.config.get('SOLR_SERVICE_ALLOWED_FIELDS')
-            payload['fl'] = ','.join(fields)
-
-            if len(protected_fields) > 0:
-                self.apply_protective_filters(payload, user_id, protected_fields)
 
         max_hl = current_app.config.get('SOLR_SERVICE_MAX_SNIPPETS', 4)
         max_frag = current_app.config.get('SOLR_SERVICE_MAX_FRAGSIZE', 100)
@@ -228,8 +213,55 @@ class SolrInterface(Resource):
                     payload[k] = max(0, min(_safe_int(v, default=max_hl), max_hl))
                 elif '.fragsize' in k:
                     payload[k] = max(1, min(_safe_int(v, default=max_frag), max_frag)) #0 would return whole field
+            if k == 'fl' or '.fl' in k:
+                self._cleanup_fl(payload, user_id, k)
+            if k == 'rows' or '.rows' in k:
+                self._cleanup_rows(payload, user_id, k)
 
         return payload, headers
+
+
+    def _cleanup_rows(self, payload, user_id, key):
+        """Ensure rows does not bypass the max rows limit"""
+        value = payload[key]
+        default_rows = current_app.config.get('SOLR_SERVICE_DEFAULT_ROWS', 10)
+        max_rows = int(current_app.config.get('SOLR_SERVICE_MAX_ROWS', 100))
+        payload[key] = min(_safe_int(value, default=default_rows), max_rows)
+
+    def _cleanup_fl(self, payload, user_id, key):
+        
+        values = payload[key]
+        
+        if not isinstance(values, list):
+            values = [values]
+        
+        fields = []
+        for y in values:
+            fields.extend([i.strip().lower() for i in y.split(',')])
+
+        disallowed = current_app.config.get(
+            'SOLR_SERVICE_DISALLOWED_FIELDS'
+        )
+
+        protected_fields = []
+        if disallowed:
+            protected_fields = filter(lambda x: x in disallowed, fields)
+            fields = filter(lambda x: x not in disallowed, fields)
+
+        if len(fields) == 0:
+            fields.append('id')
+            
+        while '*' in fields:
+            fields.pop(fields.index('*'))
+        
+        if len(fields) == 0:
+            fields = current_app.config.get('SOLR_SERVICE_ALLOWED_FIELDS')
+                        
+        payload[key] = ','.join(fields)
+        
+        if len(protected_fields) > 0:
+            self.apply_protective_filters(payload, user_id, protected_fields, key)
+
 
     def get_host(self, url):
         """Just extracts the host from the url."""

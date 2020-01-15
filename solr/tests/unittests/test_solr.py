@@ -104,8 +104,12 @@ class TestSolrInterface(TestCase):
 
         self.assertEqual(headers,
                          {'Host': u'localhost:8983', 'Content-Type': 'application/x-www-form-urlencoded'})
-
-
+        
+        # cites.fl=bibcode,pubdate,body&cites.q=citations(bibcode:2011MNRAS.413..971D)&fl=bibcode,cites:[subquery]&indent=on&q=author:Liske&wt=json
+        payload = {'cites.fl': 'bibcode,full', 'cites.q': 'bibcode:2011MNRAS.413..971D', 'fl': 'bibcode,cites:[subquery]', 'q': 'author:name'}
+        cleaned, headers = si.cleanup_solr_request(payload)
+        self.assertEqual(cleaned['cites.fl'], 'bibcode')
+        
     def test_limits(self):
         """
         Prevent users from getting certain data
