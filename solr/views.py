@@ -32,7 +32,7 @@ class StatusView(Resource):
 
 class SolrInterface(Resource):
     """Base class that responsible for forwarding a query to Solr"""
-    handler = {'default': 'SOLR_SERVICE_URL', 'embedded_bigquery': 'SOLR_SERVICE_BIGQUERY_HANDLER'}
+    handler = {'default': 'SOLR_SERVICE_URL', 'default_embedded_bigquery': 'SOLR_SERVICE_BIGQUERY_HANDLER'}
 
     def __init__(self, *args, **kwargs):
         Resource.__init__(self, *args, **kwargs)
@@ -63,7 +63,7 @@ class SolrInterface(Resource):
         handler_class = self.get_handler_class()
         files = self.check_for_embedded_bigquery(query, request, headers, handler_class=handler_class)
         if files and len(files): # must be directed to /bigquery
-            handler_class = 'embedded_bigquery'
+            handler_class += '_embedded_bigquery'
         handler = self.handler.get(handler_class, self.handler.get("default"))
 
         try:
@@ -492,8 +492,9 @@ class Search(SolrInterface):
     rate_limit = [5000, 60*60*24]
     decorators = [advertise('scopes', 'rate_limit')]
     handler = {'default': 'SOLR_SERVICE_SEARCH_HANDLER',
-               'embedded_bigquery': 'SOLR_SERVICE_BIGQUERY_HANDLER',
-               'bot': 'BOT_SOLR_SERVICE_SEARCH_HANDLER'}
+               'default_embedded_bigquery': 'SOLR_SERVICE_BIGQUERY_HANDLER',
+               'bot': 'BOT_SOLR_SERVICE_SEARCH_HANDLER',
+               'bot_embedded_bigquery': 'BOT_SOLR_SERVICE_BIGQUERY_HANDLER'}
 
     def get_handler_class(self):
         """Identify bot requests based on their authentication token"""
@@ -520,8 +521,9 @@ class BigQuery(SolrInterface):
     rate_limit = [100, 60*60*24]
     decorators = [advertise('scopes', 'rate_limit')]
     handler = {'default': 'SOLR_SERVICE_BIGQUERY_HANDLER',
-               'embedded_bigquery': 'SOLR_SERVICE_BIGQUERY_HANDLER',
-               'bot': 'BOT_SOLR_SERVICE_BIGQUERY_HANDLER'}
+               'default_embedded_bigquery': 'SOLR_SERVICE_BIGQUERY_HANDLER',
+               'bot': 'BOT_SOLR_SERVICE_BIGQUERY_HANDLER',
+               'bot_embedded_bigquery': 'BOT_SOLR_SERVICE_BIGQUERY_HANDLER'}
 
     def get_handler_class(self):
         """Identify bot requests based on their authentication token"""
