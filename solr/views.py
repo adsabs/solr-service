@@ -30,10 +30,9 @@ class StatusView(Resource):
     def get(self):
         return {'app': current_app.name, 'status': 'online'}, 200
 
-
 class SolrInterface(Resource):
     """Base class that responsible for forwarding a query to Solr"""
-    handler = 'SOLR_SERVICE_URL'
+    handler = {'default': 'SOLR_SERVICE_URL', 'embedded_bigquery': 'SOLR_SERVICE_BIGQUERY_HANDLER'}
 
     def __init__(self, *args, **kwargs):
         Resource.__init__(self, *args, **kwargs)
@@ -43,6 +42,9 @@ class SolrInterface(Resource):
             'Authorization': '-',
             'X-Forwarded-Authorization': '-',
         } # Pass to solr/clean from response, only for logging purposes
+
+    def get_handler_class(self):
+        return "default"
 
     def get(self):
         query, headers = self.cleanup_solr_request(dict(request.args))
@@ -58,20 +60,26 @@ class SolrInterface(Resource):
 
         # so I *think* this should be safe...
 
-        files = self.check_for_embedded_bigquery(query, request, headers)
+        handler_class = self.get_handler_class()
+        files = self.check_for_embedded_bigquery(query, request, headers, handler_class=handler_class)
+        if files and len(files): # must be directed to /bigquery
+            handler_class = 'embedded_bigquery'
+        handler = self.handler.get(handler_class, self.handler.get("default"))
 
         try:
             current_user_id = current_user.get_id()
         except:
             # If solr service is not shipped with adsws, this will fail and it is ok
             current_user_id = None
+
+
         if current_user_id:
-            current_app.logger.info("Dispatching 'POST' request to endpoint '{}' for user '{}'".format(current_app.config[self.handler], current_user_id))
+            current_app.logger.info("Dispatching 'POST' request to endpoint '{}' for user '{}'".format(current_app.config[handler], current_user_id))
         else:
-            current_app.logger.info("Dispatching 'POST' request to endpoint '{}'".format(current_app.config[self.handler]))
+            current_app.logger.info("Dispatching 'POST' request to endpoint '{}'".format(current_app.config[handler]))
         if files and len(files): # must be directed to /bigquery
             r = requests.post(
-                current_app.config['SOLR_SERVICE_BIGQUERY_HANDLER'],
+                current_app.config[handler],
                 params=query,
                 headers=headers,
                 files=files,
@@ -79,12 +87,12 @@ class SolrInterface(Resource):
             )
         else:
             r = requests.post(
-                current_app.config[self.handler],
+                current_app.config[handler],
                 data=query,
                 headers=headers,
                 cookies=SolrInterface.set_cookies(request),
             )
-        current_app.logger.info("Received response from from endpoint '{}' with status code '{}'".format(current_app.config[self.handler], r.status_code))
+        current_app.logger.info("Received response from from endpoint '{}' with status code '{}'".format(current_app.config[handler], r.status_code))
         return self.cleanup_solr_response_text(r.text), r.status_code, r.headers
 
     @staticmethod
@@ -117,7 +125,7 @@ class SolrInterface(Resource):
         :param user_id: string, user id as known to ADS API
         :param protected_fields: list of strings, fields
         :param key: string, name of the field we are currently processing
-            (typically 'fl', but could be 'anything.fl' when dealing 
+            (typically 'fl', but could be 'anything.fl' when dealing
             with subrequests)
         """
         fl = payload.get(key, 'id')
@@ -129,7 +137,7 @@ class SolrInterface(Resource):
             fq_key = '%s.fq' % (prefix)
             fq = payload.get(fq_key, [])
 
-            
+
         if not isinstance(fq, list):
             fq = [fq]
 
@@ -156,7 +164,7 @@ class SolrInterface(Resource):
         except:
             return text
 
-    def cleanup_solr_request(self, payload, user_id=None):
+    def cleanup_solr_request(self, payload, user_id=None, handler_class="default"):
         """
         Sanitizes a request before it is passed to solr
 
@@ -177,7 +185,8 @@ class SolrInterface(Resource):
         headers['Content-Type'] =  _h
 
         # trace id, Host, token header are important for proper routing/logging
-        headers['Host'] = self.get_host(current_app.config.get(self.handler))
+        handler = self.handler.get(handler_class, self.handler.get("default", "-"))
+        headers['Host'] = self.get_host(current_app.config.get(handler))
         internal_logging = []
         for internal_param, default in self.internal_logging_params.iteritems():
             if internal_param in request.headers:
@@ -191,7 +200,7 @@ class SolrInterface(Resource):
         payload['wt'] = 'json'
 
 
-        # Ensure there is a single rows 
+        # Ensure there is a single rows
         if 'rows' not in payload:
             payload['rows'] = current_app.config.get('SOLR_SERVICE_DEFAULT_ROWS', 10)
 
@@ -229,12 +238,12 @@ class SolrInterface(Resource):
         payload[key] = min(_safe_int(value, default=default_rows), max_rows)
 
     def _cleanup_fl(self, payload, user_id, key):
-        
+
         values = payload[key]
-        
+
         if not isinstance(values, list):
             values = [values]
-        
+
         fields = []
         for y in values:
             fields.extend([i.strip().lower() for i in y.split(',')])
@@ -250,15 +259,15 @@ class SolrInterface(Resource):
 
         if len(fields) == 0:
             fields.append('id')
-            
+
         while '*' in fields:
             fields.pop(fields.index('*'))
-        
+
         if len(fields) == 0:
             fields = current_app.config.get('SOLR_SERVICE_ALLOWED_FIELDS')
-                        
+
         payload[key] = ','.join(fields)
-        
+
         if len(protected_fields) > 0:
             self.apply_protective_filters(payload, user_id, protected_fields, key)
 
@@ -287,7 +296,7 @@ class SolrInterface(Resource):
             i = j + 1
         return out
 
-    def check_for_embedded_bigquery(self, params, request, headers):
+    def check_for_embedded_bigquery(self, params, request, headers, handler_class="default"):
         """Checks for the presence of docs() query any where inside
         the query parameters; if present - we'll verify/update
         the query with data.
@@ -323,7 +332,7 @@ class SolrInterface(Resource):
 
 
         # what is left is missing and we need to fill in the gaps
-        files = self._get_stream_data(params, list(streams), request)
+        files = self._get_stream_data(params, list(streams), request, handler_class=handler_class)
 
         # let requests library pick the appropriate ctype
         if len(files):
@@ -331,7 +340,7 @@ class SolrInterface(Resource):
 
         return files
 
-    def _get_stream_data(self, params, streams, request):
+    def _get_stream_data(self, params, streams, request, handler_class="default"):
         # TODO: it seems natural that this functionality could live inside
         # myads; there we'd be not forced to query a remote service; however
         # I fear that is not really what people are asking for - they just
@@ -369,7 +378,8 @@ class SolrInterface(Resource):
 
             new_headers = {'Authorization': request.headers['Authorization']}
             # trace id, Host, token header are important for proper routing/logging
-            new_headers['Host'] = self.get_host(current_app.config.get(self.handler))
+            handler = self.handler.get(handler_class, self.handler.get("default", "-"))
+            new_headers['Host'] = self.get_host(current_app.config.get(handler))
             for internal_param in self.internal_logging_params.keys():
                 if internal_param in request.headers:
                     new_headers[internal_param] = request.headers[internal_param]
@@ -445,29 +455,35 @@ class SolrInterface(Resource):
         return out
 
 
-
 class Tvrh(SolrInterface):
     """Exposes the solr term-vector histogram endpoint"""
     scopes = []
     rate_limit = [500, 60*60*24]
     decorators = [advertise('scopes', 'rate_limit')]
-    handler = 'SOLR_SERVICE_TVRH_HANDLER'
-
+    handler = {'default': 'SOLR_SERVICE_TVRH_HANDLER'}
 
 class Search(SolrInterface):
     """Exposes the solr select endpoint"""
     scopes = []
     rate_limit = [5000, 60*60*24]
     decorators = [advertise('scopes', 'rate_limit')]
-    handler = 'SOLR_SERVICE_SEARCH_HANDLER'
+    handler = {'default': 'SOLR_SERVICE_SEARCH_HANDLER',
+               'embedded_bigquery': 'SOLR_SERVICE_BIGQUERY_HANDLER',
+               'bot': 'BOT_SOLR_SERVICE_SEARCH_HANDLER'}
 
+    def get_handler_class(self):
+        request_token = request.headers.get('Authorization', [])[7:]
+        if request_token in current_app.config.get('BOT_TOKENS', []):
+            return "bot"
+        else:
+            return "default"
 
 class Qtree(SolrInterface):
     """Exposes the qtree endpoint"""
     scopes = []
     rate_limit = [500, 60*60*24]
     decorators = [advertise('scopes', 'rate_limit')]
-    handler = 'SOLR_SERVICE_QTREE_HANDLER'
+    handler = {'default': 'SOLR_SERVICE_QTREE_HANDLER'}
 
 
 class BigQuery(SolrInterface):
@@ -475,16 +491,26 @@ class BigQuery(SolrInterface):
     scopes = ['api']
     rate_limit = [100, 60*60*24]
     decorators = [advertise('scopes', 'rate_limit')]
-    handler = 'SOLR_SERVICE_BIGQUERY_HANDLER'
+    handler = {'default': 'SOLR_SERVICE_BIGQUERY_HANDLER',
+               'embedded_bigquery': 'SOLR_SERVICE_BIGQUERY_HANDLER',
+               'bot': 'BOT_SOLR_SERVICE_BIGQUERY_HANDLER'}
+
+    def get_handler_class(self):
+        request_token = request.headers.get('Authorization', [])[7:]
+        if request_token in current_app.config.get('BOT_TOKENS', []):
+            return "bot"
+        else:
+            return "default"
 
     def post(self):
+        handler_class = self.get_handler_class()
         payload = dict(request.form)
         payload.update(request.args)
         if request.is_json:
             payload.update(request.json)
 
         query, headers = self.cleanup_solr_request(payload)
-        files = self.check_for_embedded_bigquery(query, request, headers)
+        files = self.check_for_embedded_bigquery(query, request, headers, handler_class=handler_class)
 
         if files and len(files) > 0:
             try:
@@ -493,17 +519,17 @@ class BigQuery(SolrInterface):
                 # If solr service is not shipped with adsws, this will fail and it is ok
                 current_user_id = None
             if current_user_id:
-                current_app.logger.info("Dispatching 'POST' request to endpoint '{}' for user '{}'".format(current_app.config[self.handler], current_user_id))
+                current_app.logger.info("Dispatching 'POST' request to endpoint '{}' for user '{}'".format(current_app.config[self.handler[handler_class]], current_user_id))
             else:
-                current_app.logger.info("Dispatching 'POST' request to endpoint '{}'".format(current_app.config[self.handler]))
+                current_app.logger.info("Dispatching 'POST' request to endpoint '{}'".format(current_app.config[self.handler[handler_class]]))
             r = requests.post(
-                current_app.config[self.handler],
+                current_app.config[self.handler[handler_class]],
                 params=query,
                 headers=headers,
                 files=files,
                 cookies=SolrInterface.set_cookies(request),
             )
-            current_app.logger.info("Received response from endpoint '{}' with status code '{}'".format(current_app.config[self.handler], r.status_code))
+            current_app.logger.info("Received response from endpoint '{}' with status code '{}'".format(current_app.config[self.handler[handler_class]], r.status_code))
         else:
             message = "Malformed request"
             current_app.logger.error(message)

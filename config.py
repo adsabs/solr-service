@@ -24,7 +24,11 @@ SOLR_SERVICE_ALLOWED_FIELDS = [
     'property', 'pub', 'pubdate', 'read_count', 'title', 'vizier', 'volume',
     'year'
 ]
+BOT_SOLR_SERVICE_URL = os.environ.get('BOT_SOLR_SERVICE_URL', SOLR_SERVICE_URL)
+BOT_SOLR_SERVICE_SEARCH_HANDLER = BOT_SOLR_SERVICE_URL + '/select'
+BOT_SOLR_SERVICE_BIGQUERY_HANDLER = BOT_SOLR_SERVICE_URL + '/bigquery'
+BOT_TOKENS = []
 
 API_URL = 'http://adsws'
-VAULT_ENDPOINT = API_URL + '/vault/query' 
+VAULT_ENDPOINT = API_URL + '/vault/query'
 LIBRARY_ENDPOINT = API_URL + '/biblib/libraries'
