@@ -9,7 +9,7 @@ except:
 import json
 from models import Limits
 from sqlalchemy import or_
-from werkzeug import MultiDict
+from werkzeug.datastructures import MultiDict
 try:
     from cStringIO import StringIO
 except:

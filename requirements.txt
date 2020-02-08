@@ -1,2 +1,3 @@
 git+https://github.com/adsabs/ADSMicroserviceUtils.git@v1.1.4
 alembic==0.8.1
+Werkzeug==0.16.1
