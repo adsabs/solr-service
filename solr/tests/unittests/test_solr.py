@@ -98,18 +98,26 @@ class TestSolrInterface(TestCase):
         cleaned, headers = si.cleanup_solr_request(payload)
         self.assertNotIn('*', cleaned['fl'])
 
+        payload = {'facet.field': ['body']}
+        cleaned, headers = si.cleanup_solr_request(payload)
+        self.assertEqual(cleaned['facet.field'], '')
+
+        payload = {'facet.field': ['author_facet_hier']}
+        cleaned, headers = si.cleanup_solr_request(payload)
+        self.assertEqual(cleaned['facet.field'], 'author_facet_hier')
+
         payload = {'fq': ['pos(1,author:foo)']}
         cleaned, headers = si.cleanup_solr_request(payload)
         self.assertEqual(cleaned['fq'], ['pos(1,author:foo)'])
 
         self.assertEqual(headers,
                          {'Host': u'localhost:8983', 'Content-Type': 'application/x-www-form-urlencoded'})
-        
+
         # cites.fl=bibcode,pubdate,body&cites.q=citations(bibcode:2011MNRAS.413..971D)&fl=bibcode,cites:[subquery]&indent=on&q=author:Liske&wt=json
         payload = {'cites.fl': 'bibcode,full', 'cites.q': 'bibcode:2011MNRAS.413..971D', 'fl': 'bibcode,cites:[subquery]', 'q': 'author:name'}
         cleaned, headers = si.cleanup_solr_request(payload)
         self.assertEqual(cleaned['cites.fl'], 'bibcode')
-        
+
     def test_limits(self):
         """
         Prevent users from getting certain data
@@ -153,7 +161,10 @@ class TestWebservices(TestCase):
                'TESTING': True,
                'PROPAGATE_EXCEPTIONS': True,
                'TRAP_BAD_REQUEST_ERRORS': True,
-               'SOLR_SERVICE_DISALLOWED_FIELDS': ['full', 'bar']
+               'SOLR_SERVICE_DISALLOWED_FIELDS': ['full', 'bar'],
+               'SOLR_SERVICE_SEARCH_HANDLER': 'http://localhost:8983/solr/select',
+               'BOT_SOLR_SERVICE_SEARCH_HANDLER': 'http://bot-localhost:8983/solr/select',
+               'BOT_TOKENS': ['GoogleBot'],
             })
         Base.query = a.db.session.query_property()
         return a
@@ -165,6 +176,19 @@ class TestWebservices(TestCase):
         self.app.db.session.remove()
         self.app.db.drop_all()
 
+    def test_bot_request(self):
+        """
+        Test that bot requests are sent to the right endpoint
+        """
+        with MockSolrResponse(self.app.config['BOT_SOLR_SERVICE_SEARCH_HANDLER']):
+            r = self.client.get(url_for('search'), query_string={'q': 'star'}, headers={'Authorization': 'Bearer:GoogleBot'})
+            # At this point, an exception would have happened if the request was
+            # sent to SOLR_SERVICE_SEARCH_HANDLER instead of BOT_SOLR_SERVICE_SEARCH_HANDLER
+
+        with MockSolrResponse(self.app.config['SOLR_SERVICE_SEARCH_HANDLER']):
+            r = self.client.get(url_for('search'), query_string={'q': 'star'}, headers={'Authorization': 'Bearer:NormalUser'})
+            # At this point, an exception would have happened if the request was
+            # sent to BOT_SOLR_SERVICE_SEARCH_HANDLER instead of SOLR_SERVICE_SEARCH_HANDLER
 
     @httpretty.activate
     def test_cookie_forwarding(self):
@@ -291,7 +315,7 @@ class TestWebservices(TestCase):
             )
             self.assertEqual(len(r.json['response']['docs']), 2)
 
-    
+
     def test_docs_subquery(self):
         """
         test various situation in which we pass docs(uuid) query
@@ -308,15 +332,15 @@ class TestWebservices(TestCase):
         din = mock.MagicMock()
         din.raise_for_status = lambda: True
         din.json = lambda: data
-        
+
         out = mock.MagicMock()
         out.text = ''
         out.status_code = 200
         out.headers = {}
-        
+
         with mock.patch.object(self.app.client, 'get', return_value=din) as get, \
             mock.patch('solr.views.requests.post', return_value=out) as post:
-            r = self.client.post(url_for('bigquery'), 
+            r = self.client.post(url_for('bigquery'),
                                  query_string={'q': 'docs(library/hHGU1Ef-TpacAhicI3J8kQ)'},
                                  headers={'Authorization': 'Bearer foo'})
             # it made a request to retrieve library
@@ -325,14 +349,14 @@ class TestWebservices(TestCase):
             '/solr/bigquery' in post.call_args[0]
             x = post.call_args[1]['files']['library/hHGU1Ef-TpacAhicI3J8kQ']
             assert x[2] == 'big-query/csv'
-        
+
         data = {
-            'query': json.dumps({'query': 'q=foo&hHGU1Ef-TpacAhicI3J8kQ=foo+bar', 
+            'query': json.dumps({'query': 'q=foo&hHGU1Ef-TpacAhicI3J8kQ=foo+bar',
                                'bigquery': 'something'})
         }
         with mock.patch.object(self.app.client, 'get', return_value=din) as get, \
             mock.patch('solr.views.requests.post', return_value=out) as post:
-            r = self.client.post(url_for('bigquery'), 
+            r = self.client.post(url_for('bigquery'),
                                  query_string={'q': 'docs(hHGU1Ef-TpacAhicI3J8kQ)'},
                                  headers={'Authorization': 'Bearer foo'})
             # it made a request to retrieve library
@@ -341,7 +365,7 @@ class TestWebservices(TestCase):
             '/solr/bigquery' in post.call_args[0]
             x = post.call_args[1]['files']['hHGU1Ef-TpacAhicI3J8kQ']
             assert x[2] == 'big-query/csv'
-            
+
 
         data = {
             'query': json.dumps({'query': 'q=foo&hHGU1Ef-TpacAhicI3J8kQ=foo+bar',
@@ -349,18 +373,18 @@ class TestWebservices(TestCase):
         }
         with mock.patch.object(self.app.client, 'get', return_value=din) as get, \
             mock.patch('solr.views.requests.post', return_value=out) as post:
-            r = self.client.post(url_for('bigquery'), 
+            r = self.client.post(url_for('bigquery'),
                                  query_string={'q': 'docs(hHGU1Ef-TpacAhicI3J8kQ)'},
                                  headers={'Authorization': 'Bearer foo'})
             # it made a request to retrieve library
             get.assert_called()
             assert '/vault/query/hHGU1Ef-TpacAhicI3J8kQ' in get.call_args[0][0]
             '/solr/bigquery' in post.call_args[0]
-            
+
             x = post.call_args[1]['files']['hHGU1Ef-TpacAhicI3J8kQ']
             assert x[2] == 'big-query/csv'
-            
-        
+
+
         # we are sending another bigquery in data
         with mock.patch.object(self.app.client, 'get', return_value=din) as get, \
             mock.patch('solr.views.requests.post', return_value=out) as post:
@@ -376,33 +400,33 @@ class TestWebservices(TestCase):
             get.assert_called()
             assert '/vault/query/hHGU1Ef-TpacAhicI3J8kQ' in get.call_args[0][0]
             '/solr/bigquery' in post.call_args[0]
-            
+
             assert post.call_args[1]['files']['hHGU1Ef-TpacAhicI3J8kQ'][1] == 'foo bar'
             assert post.call_args[1]['files']['hHGU1Ef-TpacAhicI3J8kQ'][2] == 'big-query/csv'
-            
+
             assert post.call_args[1]['files']['big'][1].closed == True
             assert post.call_args[1]['files']['big'][2] == 'big-query/csv'
-            
-        
+
+
         # and also allowed for GET requests
         with mock.patch.object(self.app.client, 'get', return_value=din) as get, \
             mock.patch('solr.views.requests.post', return_value=out) as post:
-            r = self.client.get(url_for('search'), 
+            r = self.client.get(url_for('search'),
                                  query_string={'q': 'docs(hHGU1Ef-TpacAhicI3J8kQ)'},
                                  headers={'Authorization': 'Bearer foo'})
             # it made a request to retrieve library
             get.assert_called()
             assert '/vault/query/hHGU1Ef-TpacAhicI3J8kQ' in get.call_args[0][0]
             '/solr/bigquery' in post.call_args[0]
-            
+
             assert post.call_args[1]['files']['hHGU1Ef-TpacAhicI3J8kQ'][1] == 'foo bar'
             assert post.call_args[1]['files']['hHGU1Ef-TpacAhicI3J8kQ'][2] == 'big-query/csv'
-            
+
         # GET request with data in params
         with mock.patch.object(self.app.client, 'get', return_value=din) as get, \
             mock.patch('solr.views.requests.post', return_value=out) as post:
-            r = self.client.get(url_for('search'), 
-                                 query_string={'q': 'docs(hHGU1Ef-TpacAhicI3J8kQ)', 
+            r = self.client.get(url_for('search'),
+                                 query_string={'q': 'docs(hHGU1Ef-TpacAhicI3J8kQ)',
                                                'hHGU1Ef-TpacAhicI3J8kQ': 'hey joe'},
                                  headers={'Authorization': 'Bearer foo'})
             # it made no request to retrieve library
@@ -410,9 +434,9 @@ class TestWebservices(TestCase):
             assert post.call_args[1]['files']['hHGU1Ef-TpacAhicI3J8kQ'][1] == 'hey joe'
             assert post.call_args[1]['files']['hHGU1Ef-TpacAhicI3J8kQ'][2] == 'big-query/csv'
             assert '/solr/bigquery' in post.call_args[0][0]
-            
-                
-    
+
+
+
     def test_search(self):
         """
         Test the search endpoint
@@ -420,7 +444,7 @@ class TestWebservices(TestCase):
         with MockSolrResponse(self.app.config['SOLR_SERVICE_SEARCH_HANDLER']):
             r = self.client.get(url_for('search'))
             self.assertIn('responseHeader', r.json)
-            
+
 
     @httpretty.activate
     def test_qtree(self):
@@ -540,8 +564,8 @@ class TestWebservices(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertTrue('bitset' not in resp.data)
         self.assertTrue("Content-Disposition: form-data; name=\"file_field\"; filename=\"file_field\"\r\nContent-Type: big-query/csv" in resp.data)
-        
-        
+
+
         # Missing 'fq' parameter is filled in - but only when data (request.post(data=...)
         # is used (flask testing client is absolutely asinine api)
         resp = self.client.post(
@@ -549,12 +573,12 @@ class TestWebservices(TestCase):
                 data=bibcodes,
                 query_string='q=*:*&fl=bibcode'
         )
-        
+
         self.assertEqual(resp.status_code, 200)
         self.assertTrue('fq=%7B%21bitset%7D' in resp.data)
         self.assertTrue("Content-Disposition: form-data; name=\"old-bad-behaviour\"; filename=\"old-bad-behaviour\"\r\nContent-Type: big-query/csv" in resp.data)
-        
-        
+
+
 
         # 'fq' with additional params specified
         resp = self.client.post(
@@ -587,7 +611,7 @@ class TestWebservices(TestCase):
         )
 
         self.assertEqual(resp.status_code, 200)
-        
+
 
 if __name__ == '__main__':
     unittest.main()
