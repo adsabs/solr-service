@@ -399,6 +399,8 @@ class SolrInterface(Resource):
                 value = s
 
             new_headers = {'Authorization': request.headers['Authorization']}
+            if 'X-Forwarded-Authorization' in request.headers:
+                new_headers['X-Forwarded-Authorization'] = request.headers['X-Forwarded-Authorization']
             # trace id, Host, token header are important for proper routing/logging
             handler = self.handler.get(handler_class, self.handler.get("default", "-"))
             new_headers['Host'] = self.get_host(current_app.config.get(handler))
