@@ -226,9 +226,31 @@ class SolrInterface(Resource):
                 self._cleanup_fl(payload, user_id, k)
             if k == 'rows' or '.rows' in k:
                 self._cleanup_rows(payload, user_id, k)
+            if k == 'facet.field':
+                self._cleanup_facet_fields(payload, k)
 
         return payload, headers
 
+    def _cleanup_facet_fields(self, payload, key):
+        """
+        Only allow facet fields for which solr has warmed up, otherwise the
+        request might lock the solr instance for several minutes.
+
+        See: https://github.com/romanchyla/montysolr/blob/f731739cb83a14d1373e680bc955c2f04ff6db92/contrib/examples/adsabs/server/solr/collection1/conf/solrconfig.xml#L180
+        """
+        values = payload[key]
+        if not isinstance(values, list):
+            values = [values]
+
+        facet_fields = []
+        for y in values:
+            facet_fields.extend([i.strip().lower() for i in y.split(',')])
+
+        allowed_facet_fields = current_app.config.get('SOLR_SERVICE_ALLOWED_FACET_FIELDS')
+        if allowed_facet_fields:
+            facet_fields = filter(lambda x: x in allowed_facet_fields, facet_fields)
+
+        payload[key] = ','.join(facet_fields)
 
     def _cleanup_rows(self, payload, user_id, key):
         """Ensure rows does not bypass the max rows limit"""

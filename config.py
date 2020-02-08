@@ -11,6 +11,7 @@ SOLR_SERVICE_QTREE_HANDLER = SOLR_SERVICE_URL + '/qtree'
 SOLR_SERVICE_BIGQUERY_HANDLER = SOLR_SERVICE_URL + '/bigquery'
 SOLR_SERVICE_FORWARDED_COOKIES = set(['sroute'])
 SOLR_SERVICE_DISALLOWED_FIELDS = ['body', 'full', 'reader']
+SOLR_SERVICE_ALLOWED_FACET_FIELDS = ['bibstem_facet', 'author_facet_hier', 'property', 'keyword_facet', 'year', 'bibgroup_facet', 'data_facet', 'vizier_facet', 'grant_facet_hier', 'database', 'simbad_object_facet_hier', 'aff_facet_hier', 'doctype_facet_hier', 'first_author_facet_hier', 'ned_object_facet_hier',]
 SOLR_SERVICE_MAX_ROWS = 2000
 SOLR_SERVICE_DEFAULT_ROWS = 10
 SQLALCHEMY_TRACK_MODIFICATIONS = False
