@@ -98,6 +98,30 @@ class TestSolrInterface(TestCase):
         cleaned, headers = si.cleanup_solr_request(payload)
         self.assertNotIn('*', cleaned['fl'])
 
+        payload = {'stats.field': ['body']}
+        cleaned, headers = si.cleanup_solr_request(payload)
+        self.assertEqual(cleaned['stats.field'], '')
+
+        payload = {'hl.fl': ['body']}
+        cleaned, headers = si.cleanup_solr_request(payload)
+        self.assertEqual(cleaned['hl.fl'], '')
+
+        payload = {'sort': ['body asc']}
+        cleaned, headers = si.cleanup_solr_request(payload)
+        self.assertEqual(cleaned['sort'], '')
+
+        payload = {'sort': ['bibcode desc']}
+        cleaned, headers = si.cleanup_solr_request(payload)
+        self.assertEqual(cleaned['sort'], 'bibcode desc')
+
+        payload = {'sort': ['body asc, bibcode desc']}
+        cleaned, headers = si.cleanup_solr_request(payload)
+        self.assertEqual(cleaned['sort'], 'bibcode desc')
+
+        payload = {'facet.pivot': ['body']}
+        cleaned, headers = si.cleanup_solr_request(payload)
+        self.assertEqual(cleaned['facet.pivot'], '')
+
         payload = {'facet.field': ['body']}
         cleaned, headers = si.cleanup_solr_request(payload)
         self.assertEqual(cleaned['facet.field'], '')
