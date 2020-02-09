@@ -501,8 +501,9 @@ class Search(SolrInterface):
 
     def get_handler_class(self):
         """Identify bot requests based on their authentication token"""
-        if 'X-Forwarded-Authorization' in request.headers:
-            request_token = request.headers.get('X-Forwarded-Authorization', [])[7:]
+        forwarded_authorization = request.headers.get('X-Forwarded-Authorization', [])
+        if forwarded_authorization and len(forwarded_authorization) > 7:
+            request_token = forwarded_authorization[7:]
         else:
             request_token = request.headers.get('Authorization', [])[7:]
         if request_token in current_app.config.get('BOT_TOKENS', []):
@@ -530,8 +531,9 @@ class BigQuery(SolrInterface):
 
     def get_handler_class(self):
         """Identify bot requests based on their authentication token"""
-        if 'X-Forwarded-Authorization' in request.headers:
-            request_token = request.headers.get('X-Forwarded-Authorization', [])[7:]
+        forwarded_authorization = request.headers.get('X-Forwarded-Authorization', [])
+        if forwarded_authorization and len(forwarded_authorization) > 7:
+            request_token = forwarded_authorization[7:]
         else:
             request_token = request.headers.get('Authorization', [])[7:]
         if request_token in current_app.config.get('BOT_TOKENS', []):
