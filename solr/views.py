@@ -39,9 +39,7 @@ class SolrInterface(Resource):
         self._host = None
         self.internal_logging_params = {
             'X-Amzn-Trace-Id': 'Root=-',
-            'Authorization': '-',
-            'X-Forwarded-Authorization': '-',
-        } # Pass to solr/clean from response, only for logging purposes
+        } # Pass to solr only for logging purposes, note that this will be returned back to the user by solr
 
     def get_handler_class(self):
         return "default"
@@ -93,7 +91,7 @@ class SolrInterface(Resource):
                 cookies=SolrInterface.set_cookies(request),
             )
         current_app.logger.info("Received response from from endpoint '{}' with status code '{}'".format(current_app.config[handler], r.status_code))
-        return self.cleanup_solr_response_text(r.text), r.status_code, r.headers
+        return r.text, r.status_code, r.headers
 
     @staticmethod
     def set_cookies(request):
@@ -150,19 +148,6 @@ class SolrInterface(Resource):
                     fq.append(unicode(f.filter))
                     payload['fl'] = fl
             session.commit()
-
-    def cleanup_solr_response_text(self, text):
-        """
-        Remove internal logging parameters from solr response
-        """
-        try:
-            r = json.loads(text)
-            params = r.get('responseHeader', {}).get('params', {})
-            params.pop('internal_logging_params')
-            clean_text = unicode(json.dumps(r)+'\n')
-            return clean_text
-        except:
-            return text
 
     def cleanup_solr_request(self, payload, user_id=None, handler_class="default"):
         """
@@ -573,7 +558,7 @@ class BigQuery(SolrInterface):
             message = "Malformed request"
             current_app.logger.error(message)
             return json.dumps({'error': message}), 400
-        return self.cleanup_solr_response_text(r.text), r.status_code, r.headers
+        return r.text, r.status_code, r.headers
 
 
 def _safe_int(val, default=0):
