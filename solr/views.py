@@ -202,7 +202,9 @@ class SolrInterface(Resource):
         # Amount of time, in milliseconds, allowed for a search to complete (incompatible with cursorMark)
         # - This value is only checked at the time of: Query Expansion, and Document collection
         if 'cursorMark' not in payload:
-            payload['timeAllowed'] = current_app.config.get('SOLR_SERVICE_TIME_ALLOWED_MS', 60000)
+            time_allowed = current_app.config.get('SOLR_SERVICE_TIME_ALLOWED_MS')
+            if time_allowed:
+                payload['timeAllowed'] = time_allowed
 
         max_hl = current_app.config.get('SOLR_SERVICE_MAX_SNIPPETS', 4)
         max_frag = current_app.config.get('SOLR_SERVICE_MAX_FRAGSIZE', 100)
