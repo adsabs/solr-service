@@ -1,4 +1,4 @@
-from flask import current_app, request
+from flask import current_app, request, abort, make_response, jsonify
 from flask.ext.restful import Resource
 from flask.ext.discoverer import advertise
 try:
@@ -412,7 +412,7 @@ class SolrInterface(Resource):
             else:
                 r = current_app.client.get(current_app.config['VAULT_ENDPOINT'] + '/' + value,
                                            headers=new_headers)
-                r.raise_for_status()
+                self._abort_for_status(r)
 
                 # json serialized dictionary with two keys, 'query' and 'bigquery'
                 # their values are strings (for query urlencoded parameters)
@@ -456,7 +456,8 @@ class SolrInterface(Resource):
             r = current_app.client.get(current_app.config['LIBRARY_ENDPOINT'] + '/' + library_id,
                                        params=params,
                                        headers=headers)
-            r.raise_for_status()
+            self._abort_for_status(r)
+
             q = r.json()
             oldcount = len(out['documents'])
             out['documents'].update(q['documents'])
@@ -472,6 +473,15 @@ class SolrInterface(Resource):
             params['start'] = params['start'] + maxr
 
         return out
+
+    def _abort_for_status(self, r):
+        if not r.ok:
+            try:
+                message_dict = r.json()
+            except ValueError:
+                abort(make_response(jsonify(message=r.text), r.status_code))
+            else:
+                abort(make_response(jsonify(message_dict), r.status_code))
 
 
 class Tvrh(SolrInterface):
