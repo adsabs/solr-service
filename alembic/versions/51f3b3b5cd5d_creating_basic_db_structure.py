@@ -15,7 +15,6 @@ import datetime
 
 from sqlalchemy.sql import table, column
 from sqlalchemy import String, Integer, Index
-from sqlalchemy_utils import URLType
 
 
 def upgrade():
@@ -25,7 +24,7 @@ def upgrade():
         sa.Column('field', sa.String(length=255), nullable=True),
         sa.Column('filter', sa.Text, nullable=False),
         Index('ix_uid', 'uid')
-    )    
+    )
 
 def downgrade():
     op.drop_table('limits')
