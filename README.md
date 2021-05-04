@@ -1,5 +1,4 @@
 
-[![Build Status](https://travis-ci.org/adsabs/solr-service.svg?branch=master)](https://travis-ci.org/adsabs/solr-service)
 [![Coverage Status](https://coveralls.io/repos/adsabs/solr-service/badge.svg?branch=master&service=github)](https://coveralls.io/github/adsabs/solr-service?branch=master)
 
 # Microservice responsible for proxying requests to Solr
