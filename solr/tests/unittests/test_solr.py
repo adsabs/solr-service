@@ -6,13 +6,13 @@ from flask import url_for
 import unittest
 import httpretty
 import json
-import app
+from solr import app
 from werkzeug.security import gen_salt
 from werkzeug.datastructures import MultiDict
 from StringIO import StringIO
 from solr.tests.mocks import MockSolrResponse
-from views import SolrInterface
 from solr import views
+from solr.views import SolrInterface
 from models import Limits, Base
 import mock
 from StringIO import StringIO

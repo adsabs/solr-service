@@ -1,6 +1,6 @@
 from flask.ext.testing import TestCase
 import unittest
-import app
+from solr import app
 
 
 class TestWebservices(TestCase):

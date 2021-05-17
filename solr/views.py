@@ -1,3 +1,4 @@
+from __future__ import absolute_import
 from flask import current_app, request
 from flask.ext.restful import Resource
 from flask.ext.discoverer import advertise
@@ -7,7 +8,7 @@ except:
     # If solr service is not shipped with adsws, this will fail and it is ok
     pass
 import json
-from models import Limits
+from .models import Limits
 from sqlalchemy import or_
 from werkzeug.datastructures import MultiDict
 try:
