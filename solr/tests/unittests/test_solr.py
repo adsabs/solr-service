@@ -1,7 +1,7 @@
 import sys, os
 PROJECT_HOME = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../'))
 sys.path.append(PROJECT_HOME)
-from flask.ext.testing import TestCase
+from flask_testing import TestCase
 from flask import url_for
 import unittest
 import httpretty
@@ -9,13 +9,12 @@ import json
 from solr import app
 from werkzeug.security import gen_salt
 from werkzeug.datastructures import MultiDict
-from StringIO import StringIO
+from io import BytesIO
 from solr.tests.mocks import MockSolrResponse
 from solr import views
 from solr.views import SolrInterface
 from models import Limits, Base
 import mock
-from StringIO import StringIO
 
 class TestSolrInterface(TestCase):
 
@@ -248,11 +247,11 @@ class TestWebservices(TestCase):
             r = c.get(url_for('search'), query_string={'q': 'star'})
 
             # Two cookies (session and sroute)
-            self.assertEqual(len(r.data.split(';')), len(self.app.config.get("SOLR_SERVICE_FORWARDED_COOKIES")))
+            self.assertEqual(len(r.data.decode('utf-8').split(';')), len(self.app.config.get("SOLR_SERVICE_FORWARDED_COOKIES")))
 
             # This forwarded cookie should match the one we gave originally
             n_found_cookies_with_good_value = 0
-            for cookie in r.data.split(';'):
+            for cookie in r.data.decode('utf-8').split(';'):
                 key, value = cookie.split('=')
                 if key in self.app.config.get("SOLR_SERVICE_FORWARDED_COOKIES"):
                     self.assertEqual(value.strip(), cookie_value)
@@ -417,7 +416,7 @@ class TestWebservices(TestCase):
                                  data={
                                      'q': '*:*',
                                      'fq': 'docs(hHGU1Ef-TpacAhicI3J8kQ)',
-                                     'big': (StringIO('foo\nbar'), 'bigname', 'big-query/csv')
+                                     'big': (BytesIO('foo\nbar'.encode('utf-8')), 'bigname', 'big-query/csv')
                                      },
                                  headers={'Authorization': 'Bearer foo'})
             # it made a request to retrieve library
@@ -568,7 +567,7 @@ class TestWebservices(TestCase):
                     'q': '*:*',
                     'fl': 'bibcode',
                     'fq': '{!bitset}',
-                    'file_field': (StringIO(bibcodes), 'file', 'big-query/csv')
+                    'file_field': (BytesIO(bibcodes.encode('utf-8')), 'file', 'big-query/csv')
                 }
         )
 
@@ -581,13 +580,13 @@ class TestWebservices(TestCase):
                 data={
                     'q': '*:*',
                     'fl': 'bibcode',
-                    'file_field': (StringIO(bibcodes), 'filename', 'big-query/csv'),
+                    'file_field': (BytesIO(bibcodes.encode('utf-8')), 'filename', 'big-query/csv'),
                     }
         )
 
         self.assertEqual(resp.status_code, 200)
-        self.assertTrue('bitset' not in resp.data)
-        self.assertTrue("Content-Disposition: form-data; name=\"file_field\"; filename=\"file_field\"\r\nContent-Type: big-query/csv" in resp.data)
+        self.assertTrue('bitset' not in resp.data.decode('utf-8'))
+        self.assertTrue("Content-Disposition: form-data; name=\"file_field\"; filename=\"file_field\"\\r\\nContent-Type: big-query/csv" in resp.data.decode('utf-8'))
 
 
         # Missing 'fq' parameter is filled in - but only when data (request.post(data=...)
@@ -599,8 +598,8 @@ class TestWebservices(TestCase):
         )
 
         self.assertEqual(resp.status_code, 200)
-        self.assertTrue('fq=%7B%21bitset%7D' in resp.data)
-        self.assertTrue("Content-Disposition: form-data; name=\"old-bad-behaviour\"; filename=\"old-bad-behaviour\"\r\nContent-Type: big-query/csv" in resp.data)
+        self.assertTrue('fq=%7B%21bitset%7D' in resp.data.decode('utf-8'))
+        self.assertTrue("Content-Disposition: form-data; name=\"old-bad-behaviour\"; filename=\"old-bad-behaviour\"\\r\\nContent-Type: big-query/csv" in resp.data.decode('utf-8'))
 
 
 
@@ -612,20 +611,20 @@ class TestWebservices(TestCase):
                     'q': '*:*',
                     'fl': 'bibcode',
                     'fq': '{!bitset compression = true}',
-                    'file_field': (StringIO(bibcodes), 'filename', 'big-query/csv'),
+                    'file_field': (BytesIO(bibcodes.encode('utf-8')), 'filename', 'big-query/csv'),
                     }
         )
 
         self.assertEqual(resp.status_code, 200)
-        self.assertTrue('fq=%7B%21bitset+compression+%3D+true%7D' in resp.data)
+        self.assertTrue('fq=%7B%21bitset+compression+%3D+true%7D' in resp.data.decode('utf-8'))
 
         # We now allow more content streams to be sent
         data = MultiDict([
             ('q', '*:*'),
             ('fl', 'bibcode'),
             ('fq', '{!bitset}'),
-            ('file_field', (StringIO(bibcodes), 'filename', 'big-query/csv')),
-            ('file_field', (StringIO(bibcodes), 'filename', 'big-query/csv')),
+            ('file_field', (BytesIO(bibcodes.encode('utf-8')), 'filename', 'big-query/csv')),
+            ('file_field', (BytesIO(bibcodes.encode('utf-8')), 'filename', 'big-query/csv')),
         ])
 
         resp = self.client.post(

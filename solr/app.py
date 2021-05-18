@@ -1,8 +1,9 @@
 from __future__ import absolute_import
+from past.builtins import basestring
 from flask import Flask, make_response, jsonify
-from flask.ext.restful import Api
-from flask.ext.discoverer import Discoverer
-from flask.ext.sqlalchemy import SQLAlchemy
+from flask_restful import Api
+from flask_discoverer import Discoverer
+from flask_sqlalchemy import SQLAlchemy
 from .views import StatusView, Tvrh, Search, Qtree, BigQuery
 from adsmutils import ADSFlask
 
