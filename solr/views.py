@@ -342,7 +342,9 @@ class SolrInterface(Resource):
         if request.data and isinstance(request.data, basestring) and len(request.data) > 0:
             if 'fq' not in params:
                 params['fq'] = [u'{!bitset}']
-            elif len([x for x in params['fq'] if '!bitset' in x]) == 0:
+            elif isinstance(params['fq'], str) and '{!bitset}' not in params['fq']:
+                params['fq'] += u' {!bitset}'
+            elif isinstance(params['fq'], list) and len([x for x in params['fq'] if '!bitset' in x]) == 0:
                 params['fq'].append(u'{!bitset}')
 
             # we'll package request.data into files
