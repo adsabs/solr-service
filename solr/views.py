@@ -1,21 +1,23 @@
+from __future__ import absolute_import
+from future import standard_library
+standard_library.install_aliases()
+from builtins import str
+from past.builtins import basestring
 from flask import current_app, request
-from flask.ext.restful import Resource
-from flask.ext.discoverer import advertise
+from flask_restful import Resource
+from flask_discoverer import advertise
 try:
     from flask_login import current_user
 except:
     # If solr service is not shipped with adsws, this will fail and it is ok
     pass
 import json
-from models import Limits
+from .models import Limits
 from sqlalchemy import or_
 from werkzeug.datastructures import MultiDict
-try:
-    from cStringIO import StringIO
-except:
-    from StringIO import StringIO
+from io import StringIO
 from io import BytesIO
-from urlparse import parse_qs
+from urllib.parse import parse_qs
 
 import requests # Do not use current_app.client but requests, to avoid re-using
                 # connections from a pool which would make solr ingress nginx
@@ -145,7 +147,7 @@ class SolrInterface(Resource):
             for f in session.query(Limits).filter(Limits.uid==user_id, or_(Limits.field==x for x in protected_fields)).all():
                 if f.filter:
                     fl = u'{0},{1}'.format(fl, f.field)
-                    fq.append(unicode(f.filter))
+                    fq.append(str(f.filter))
                     payload['fl'] = fl
             session.commit()
 
@@ -173,7 +175,7 @@ class SolrInterface(Resource):
         handler = self.handler.get(handler_class, self.handler.get("default", "-"))
         headers['Host'] = self.get_host(current_app.config.get(handler))
         internal_logging = []
-        for internal_param, default in self.internal_logging_params.iteritems():
+        for internal_param, default in self.internal_logging_params.items():
             if internal_param in request.headers:
                 internal_logging.append("{}={}".format(internal_param, request.headers[internal_param]))
                 headers[internal_param] = request.headers[internal_param]
@@ -208,7 +210,7 @@ class SolrInterface(Resource):
 
         max_hl = current_app.config.get('SOLR_SERVICE_MAX_SNIPPETS', 4)
         max_frag = current_app.config.get('SOLR_SERVICE_MAX_FRAGSIZE', 100)
-        for k,v in payload.items():
+        for k,v in list(payload.items()):
             if 'hl.' in k:
                 if '.snippets' in k:
                     payload[k] = max(0, min(_safe_int(v, default=max_hl), max_hl))
@@ -242,7 +244,7 @@ class SolrInterface(Resource):
             fields.extend([i.strip().lower() for i in y.split(',')])
 
         if allowed_fields:
-            fields = filter(lambda x: x in allowed_fields, fields)
+            fields = [x for x in fields if x in allowed_fields]
 
         payload[key] = ','.join(fields)
 
@@ -271,8 +273,8 @@ class SolrInterface(Resource):
 
         protected_fields = []
         if disallowed:
-            protected_fields = filter(lambda x: x in disallowed, fields)
-            fields = filter(lambda x: x not in disallowed, fields)
+            protected_fields = [x for x in fields if x in disallowed]
+            fields = [x for x in fields if x not in disallowed]
 
         if len(fields) == 0:
             fields.append('id')
@@ -340,7 +342,9 @@ class SolrInterface(Resource):
         if request.data and isinstance(request.data, basestring) and len(request.data) > 0:
             if 'fq' not in params:
                 params['fq'] = [u'{!bitset}']
-            elif len(filter(lambda x: '!bitset' in x, params['fq'])) == 0:
+            elif isinstance(params['fq'], str) and '{!bitset}' not in params['fq']:
+                params['fq'] += u' {!bitset}'
+            elif isinstance(params['fq'], list) and len([x for x in params['fq'] if '!bitset' in x]) == 0:
                 params['fq'].append(u'{!bitset}')
 
             # we'll package request.data into files

@@ -1,6 +1,7 @@
-from flask.ext.testing import TestCase
+from flask_testing import TestCase
+from past.builtins import basestring
 import unittest
-import app
+from solr import app
 
 
 class TestWebservices(TestCase):
@@ -23,7 +24,7 @@ class TestWebservices(TestCase):
             'methods': list,
             'description': basestring,
             'rate_limit': list,
-        }.iteritems():
+        }.items():
             # Assert each resource is described has the expected_field
             [self.assertIn(expected_field, v) for v in r.json.values()]
 
