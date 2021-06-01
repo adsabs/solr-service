@@ -47,7 +47,7 @@ class SolrInterface(Resource):
         return "default"
 
     def get(self):
-        query, headers = self.cleanup_solr_request(dict(request.args))
+        query, headers = self.cleanup_solr_request(request.args.to_dict(flat=False))
 
         # trickery, we can accept docs() operator if it is part of form data
         # I tried to search whether it is a valid move to send multipart
@@ -540,8 +540,8 @@ class BigQuery(SolrInterface):
 
     def post(self):
         handler_class = self.get_handler_class()
-        payload = dict(request.form)
-        payload.update(request.args)
+        payload = request.form.to_dict(flat=False)
+        payload.update(request.args.to_dict(flat=False))
         if request.is_json:
             payload.update(request.json)
 
