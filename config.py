@@ -25,7 +25,7 @@ SOLR_SERVICE_ALLOWED_FIELDS = [
     'abstract', 'ack', 'aff', 'alternate_bibcode', 'alternate_title',
     'arxiv_class', 'author', 'bibcode', 'bibgroup', 'bibstem',
     'citation_count', 'copyright', 'data', 'database', 'doctype', 'doi',
-    'first_author', 'grant', 'id', 'identifier', 'indexstamp', 'issue',
+    'first_author', 'grant', 'has', 'id', 'identifier', 'indexstamp', 'issue',
     'keyword', 'lang', 'orcid_other', 'orcid_pub', 'orcid_user', 'page',
     'property', 'pub', 'pubdate', 'read_count', 'title', 'vizier', 'volume',
     'year'
