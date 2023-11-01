@@ -15,7 +15,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        python -m pip==21 install --upgrade setuptools==58 pip
+        python -m pip install --upgrade setuptools==58 pip==21
         pip install -U -r requirements.txt
         pip install -U -r dev-requirements.txt
 
