@@ -13,7 +13,7 @@ If you wish to install the service locally:
   1. install dependencies `pip install -r requirements.txt; pip install -r dev-requirements.txt`
   1. create a `solr/local_config.py` and point at your SOLR instance, example:
 
-    ```
+```
 SOLR_SERVICE_URL='http://localhost:8983/solr'
 ```
   1. start the solr-service `python cors.py`
@@ -22,6 +22,16 @@ SOLR_SERVICE_URL='http://localhost:8983/solr'
 Note: normally, we run the `solr-service` using gunicorn (wsgi.py) behind the `adsws` gateway.
 In this case, we use `cors.py` to run the `solr-service` as a standalone service (without needing
 the ADS gateway).
+
+## Specifying Limits
+
+Additional facets can be made available to users by specifying them in the `Limits` table. The table takes one `facet` along with an associated filter per user per line.
+these entries are currently inserted manually
+```sql
+INSERT INTO public.limits (uid, field, filter)
+VALUES (user_id, solr_field, filter);
+```
+filter can be `*:*`.
 
 ## End User Api Documentation
 
