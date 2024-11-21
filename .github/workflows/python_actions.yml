@@ -23,8 +23,9 @@ jobs:
       run: |
         py.test
 
-    - uses: actions/upload-artifact@v2
+    - uses: actions/upload-artifact@v4
       with:
+        include-hidden-files: True
         name: coverage-solrservice
         path: .coverage
 
