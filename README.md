@@ -7,16 +7,24 @@ This service is a part of the ADS API. It is a tiny proxy in front of the SOLR.
 
 ## Development/Installation
 
+> [!IMPORTANT]  
+> To avoid installation headaches it's strongly suggested [that you use `uv`](https://docs.astral.sh/uv/), a fast and flexible alternative to `pip`. We still have some Python infrastructure that runs on Python 2, which can cause package installation errors that are difficult to resolve without excluding newer package versions.
+
 If you wish to install the service locally:
 
-  1. create a python virtual environment `virtualenv python`
-  1. install dependencies `pip install -r requirements.txt; pip install -r dev-requirements.txt`
-  1. create a `solr/local_config.py` and point at your SOLR instance, example:
+  1. create a python virtual environment using uv: `uv venv -p 3.9 venv/`
+  2. activate the new virtual environment: `source venv/bin/activate` (or its Windows equivalent)
+  3. install dependencies, excluding newer versions of `setuptools` that break the installation:
+
+```
+uv pip install --exclude-newer='2022-01-01' -r requirements.txt && uv pip install --exclude-newer='2022-01-01' -r dev-requirements.txt
+```
+  4. create a `solr/local_config.py` and point at your SOLR instance, example:
 
 ```
 SOLR_SERVICE_URL='http://localhost:8983/solr'
 ```
-  1. start the solr-service `python cors.py`
+  5. start the solr-service `python cors.py`
 
 
 Note: normally, we run the `solr-service` using gunicorn (wsgi.py) behind the `adsws` gateway.
