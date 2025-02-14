@@ -117,6 +117,9 @@ class SolrInterface(Resource):
                 unhighlightable_docs = []
 
                 for doc in response_data['response']['docs']:
+                    if 'publisher' not in doc:
+                        continue
+
                     if type(doc['publisher']) is list:
                         for publisher in doc['publisher']:
                             if publisher in unhighlightable_publishers:
