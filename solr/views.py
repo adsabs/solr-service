@@ -69,6 +69,19 @@ class SolrInterface(Resource):
             handler_class += '_embedded_bigquery'
         handler = self.handler.get(handler_class, self.handler.get("default"))
 
+        should_postprocess_response = False
+
+        unhighlightable_publishers = current_app.config.get('SOLR_SERVICE_DISALLOWED_HIGHLIGHTS_PUBLISHERS', [])
+        default_fields = current_app.config.get('SOLR_SERVICE_DEFAULT_FIELDS', [])
+        if default_fields and handler.lower() == '/select':
+            if 'fl' not in query:
+                query['fl'] = ",".join(default_fields)
+
+            if unhighlightable_publishers and 'hl' in query:
+                if 'publisher' not in query['fl']:
+                    query['fl'] = query['fl'] + ',publisher'
+                should_postprocess_response = True
+
         try:
             current_user_id = current_user.get_id()
         except:
@@ -96,6 +109,32 @@ class SolrInterface(Resource):
                 cookies=SolrInterface.set_cookies(request),
             )
         current_app.logger.info("Received response from from endpoint '{}' with status code '{}'".format(current_app.config[handler], r.status_code))
+
+        if should_postprocess_response and r.ok:
+            try:
+                response_data = r.json()
+                unhighlightable_docs = []
+
+                for doc in response_data['response']['docs']:
+                    if type(doc['publisher']) is list:
+                        for publisher in doc['publisher']:
+                            if publisher in unhighlightable_publishers:
+                                unhighlightable_docs.append(doc['id'])
+                                break
+                    else:
+                        if doc['publisher'] in unhighlightable_publishers:
+                            unhighlightable_docs.append(doc['id'])
+
+                for remove_doc in unhighlightable_docs:
+                    if remove_doc in response_data['highlighting']:
+                        del response_data['highlighting'][remove_doc]
+
+                response_data['filtered'] = 'true'
+
+                return json.dumps(response_data), r.status_code, r.headers
+            except Exception:
+                pass
+
         return r.text, r.status_code, r.headers
 
     @staticmethod
