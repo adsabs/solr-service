@@ -74,7 +74,6 @@ class SolrInterface(Resource):
         unhighlightable_publishers = current_app.config.get('SOLR_SERVICE_DISALLOWED_HIGHLIGHTS_PUBLISHERS', [])
         default_fields = current_app.config.get('SOLR_SERVICE_DEFAULT_FIELDS', [])
 
-        current_app.logger.info("Using handler: {}".format(handler))
         if default_fields and handler == 'SOLR_SERVICE_SEARCH_HANDLER':
             if 'fl' not in query:
                 query['fl'] = ",".join(default_fields)
