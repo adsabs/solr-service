@@ -122,11 +122,11 @@ class SolrInterface(Resource):
 
                     if type(doc['publisher']) is list:
                         for publisher in doc['publisher']:
-                            if publisher in unhighlightable_publishers:
+                            if publisher.lower() in unhighlightable_publishers:
                                 unhighlightable_docs.append(doc['id'])
                                 break
                     else:
-                        if doc['publisher'] in unhighlightable_publishers:
+                        if doc['publisher'].lower() in unhighlightable_publishers:
                             unhighlightable_docs.append(doc['id'])
 
                 for remove_doc in unhighlightable_docs:
