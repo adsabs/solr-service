@@ -131,7 +131,9 @@ class SolrInterface(Resource):
 
                 for remove_doc in unhighlightable_docs:
                     if remove_doc in response_data['highlighting']:
-                        del response_data['highlighting'][remove_doc]
+                        doc_highlights = response_data['highlighting'][remove_doc]
+                        if 'body' in doc_highlights:
+                            del doc_highlights['body']
 
                 response_data['filtered'] = 'true'
 
