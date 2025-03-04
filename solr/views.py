@@ -264,7 +264,7 @@ class SolrInterface(Resource):
                     payload[k] = max(0, min(_safe_int(v, default=max_hl), max_hl))
                 elif '.fragsize' in k:
                     payload[k] = max(1, min(_safe_int(v, default=max_frag), max_frag)) #0 would return whole field
-                    payload['hl.maxHighlightChars'] = payload[k]
+                    payload['hl.maxHighlightCharacters'] = payload[k]
             if k == 'hl.fl':
                 self._cleanup_fields(payload, k, current_app.config.get('SOLR_SERVICE_ALLOWED_HIGHLIGHTS_FIELDS'))
             if k == 'fl' or ('.fl' in k and k != 'hl.fl'):
