@@ -258,6 +258,22 @@ class SolrInterface(Resource):
 
         max_hl = current_app.config.get('SOLR_SERVICE_MAX_SNIPPETS', 4)
         max_frag = current_app.config.get('SOLR_SERVICE_MAX_FRAGSIZE', 100)
+
+        # Highlight queries need to be limited per publisher agreements,
+        # so inject the limit terms if they don't exist.
+        for key in ['hl.fl', 'hl.q']:
+            if key in payload:
+                if 'hl.fragsize' not in payload:
+                    payload['hl.fragsize'] = max_frag
+
+                if 'hl.snippets' not in payload:
+                    payload['hl.snippets'] = max_hl
+
+                if 'hl.maxHighlightCharacters' not in payload:
+                    payload['hl.maxHighlightCharacters'] = max_frag
+
+                break
+
         for k,v in list(payload.items()):
             if 'hl.' in k:
                 if '.snippets' in k:
