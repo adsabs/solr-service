@@ -257,7 +257,7 @@ class SolrInterface(Resource):
                 payload['timeAllowed'] = time_allowed
 
         max_hl = current_app.config.get('SOLR_SERVICE_MAX_SNIPPETS', 4)
-        max_frag = current_app.config.get('SOLR_SERVICE_MAX_FRAGSIZE', 100)
+        max_frag = current_app.config.get('SOLR_SERVICE_MAX_FRAGSIZE', 200)
 
         # Highlight queries need to be limited per publisher agreements,
         # so inject the limit terms if they don't exist.
