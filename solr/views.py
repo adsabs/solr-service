@@ -262,12 +262,6 @@ class SolrInterface(Resource):
         # Highlight queries need to be limited per publisher agreements,
         # so inject the limit terms if they don't exist.
         if 'hl' in payload:
-            if 'hl.fragsize' not in payload:
-                payload['hl.fragsize'] = max_frag
-
-            if 'hl.snippets' not in payload:
-                payload['hl.snippets'] = max_hl
-
             if 'hl.maxHighlightCharacters' not in payload:
                 payload['hl.maxHighlightCharacters'] = max_frag
 
