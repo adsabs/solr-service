@@ -213,7 +213,7 @@ class SolrInterface(Resource):
         """
 
         if not user_id:
-            user_id = request.headers.get('X-Adsws-Uid', 'default')
+            user_id = request.headers.get('X-api-uid', 'default')
 
         headers = {}
         _h = request.headers.get('Content-Type', 'application/x-www-form-urlencoded')
