@@ -50,8 +50,8 @@ class SolrInterface(Resource):
             'X-Amzn-Trace-Id': 'Root=-',
         } # Pass to solr only for logging purposes, note that this will be returned back to the user by solr
         # compile them just once.
-        self.citation_pattern = re.compile('^(citations\((identifier|bibcode):([^\)]+)\))$')
-        self.reference_pattern = re.compile('^(references\((identifier|bibcode):([^\)]+)\))$')
+        self.citation_pattern = re.compile('^(citations\((identifier|bibcode):([^\)\\s]+)\))$')
+        self.reference_pattern = re.compile('^(references\((identifier|bibcode):([^\)\\s]+)\))$')
         self.second_order_pattern = re.compile('(?:citations)|(?:references)|(?:similar)|(?:topn)|(?:trending)|(?:useful)|(?:reviews)\(')
     def get_handler_class(self):
         return "default"
