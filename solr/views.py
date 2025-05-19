@@ -1,5 +1,6 @@
 from __future__ import absolute_import
 from future import standard_library
+
 standard_library.install_aliases()
 from builtins import str
 from past.builtins import basestring
@@ -18,7 +19,7 @@ from werkzeug.datastructures import MultiDict
 from io import StringIO
 from io import BytesIO
 from urllib.parse import parse_qs
-
+import re
 import requests # Do not use current_app.client but requests, to avoid re-using
                 # connections from a pool which would make solr ingress nginx
                 # not set cookies with the affinity hash sroute
@@ -34,7 +35,13 @@ class StatusView(Resource):
 
 class SolrInterface(Resource):
     """Base class that responsible for forwarding a query to Solr"""
-    handler = {'default': 'SOLR_SERVICE_URL', 'default_embedded_bigquery': 'SOLR_SERVICE_BIGQUERY_HANDLER'}
+    # TODO: add a second order query handler (new URL). The remaining parameters should all still work.
+    handler = {
+        'default': 'SOLR_SERVICE_URL',
+        'default_embedded_bigquery': 'SOLR_SERVICE_BIGQUERY_HANDLER',
+        'default_second_order' : 'SECOND_ORDER_SOLR_SERVICE_SEARCH_HANDLER',
+        'default_second_order_embdedded_bigquery': 'SECOND_ORDER_SOLR_SERVICE_BIGQUERY_HANDLER'
+    }
 
     def __init__(self, *args, **kwargs):
         Resource.__init__(self, *args, **kwargs)
@@ -42,12 +49,16 @@ class SolrInterface(Resource):
         self.internal_logging_params = {
             'X-Amzn-Trace-Id': 'Root=-',
         } # Pass to solr only for logging purposes, note that this will be returned back to the user by solr
-
+        # compile them just once.
+        self.citation_pattern = re.compile('^(citations\((identifier|bibcode):([^\)]+)\))$')
+        self.reference_pattern = re.compile('^(references\((identifier|bibcode):([^\)]+)\))$')
+        self.second_order_pattern = re.compile('(?:citations)|(?:references)|(?:similar)|(?:topn)|(?:trending)|(?:useful)|(?:reviews)\(')
     def get_handler_class(self):
         return "default"
 
     def get(self):
         query, headers = self.cleanup_solr_request(request.args.to_dict(flat=False))
+        #Here we can identify second-order queries and reroute to the second order handler.
 
         # trickery, we can accept docs() operator if it is part of form data
         # I tried to search whether it is a valid move to send multipart
@@ -61,6 +72,13 @@ class SolrInterface(Resource):
         # so I *think* this should be safe...
 
         handler_class = self.get_handler_class()
+        # Before we check for bigquery, let's see if there are any citations(x), references(x) we can rewrite
+        # and then check for routing to second_order query enabled server
+        query, rewrote_query = self.rewrite_citations(query)
+        has_second_order = self.is_second_order(query)
+        if has_second_order:
+            handler_class += '_second_order'
+        #now check for the bigquery
         files = self.check_for_embedded_bigquery(query, request, headers, handler_class=handler_class)
         if files and len(files): # must be directed to /bigquery
             handler_class += '_embedded_bigquery'
@@ -77,6 +95,9 @@ class SolrInterface(Resource):
             current_app.logger.info("Dispatching 'POST' request to endpoint '{}' for user '{}'".format(current_app.config[handler], current_user_id))
         else:
             current_app.logger.info("Dispatching 'POST' request to endpoint '{}'".format(current_app.config[handler]))
+        # if we rewrote the query, we might (unlikely) have gotten an identifier that is not a bibcode
+        # so we have to test it there 0 results ( a rewrite should only have 1 result ) and if so
+        # then look up the bibcode from the identifier (extra solr call) then run the query again.
         if files and len(files): # must be directed to /bigquery
             r = requests.post(
                 current_app.config[handler],
@@ -477,7 +498,34 @@ class SolrInterface(Resource):
             params['start'] = params['start'] + maxr
 
         return out
+    """Given a query of the form
+        citations(identifier:xxxx) rewrite the query to reference:xxxx
+        references(identifier:xxxx) rewrite the query to citation:xxxx
+        Allow all other queries to return unmolested.
+        returns the query, identifier or bibcode based on match if query was rewritten
+        query, None if not matched
+        NB: This only matches exact query strings. Complex queries get the slow path treatment.
+        If the return code is bibcode, we know it can fast path, if not, we may need to
+        look up the bibcode (two step retrieval).
+    """
+    def rewrite_citations(self, query):
+        # first check for a citations operator, then a references
+        tok = None
+        citation_match = self.citation_pattern.match(query)
+        if citation_match:
+            query = re.sub(self.citation_pattern, f'reference:{citation_match.group(3)}', query)
+            tok = citation_match.group(2)
+        else:
+            reference_match = self.reference_pattern.match(query)
+            if reference_match:
+                query = re.sub(self.reference_pattern, f'reference:{reference_match.group(3)}', query)
+                tok = reference_match.group(2)
+        return query, tok
 
+    """Given a query return True if it contains a second order operator, False if not.
+    """
+    def is_second_order(self, query):
+        return self.second_order_pattern.search(query)
 
 class Tvrh(SolrInterface):
     """Exposes the solr term-vector histogram endpoint"""
@@ -491,8 +539,11 @@ class Search(SolrInterface):
     scopes = []
     rate_limit = [5000, 60*60*24]
     decorators = [advertise('scopes', 'rate_limit')]
+    #  Not sure where bots should go.
     handler = {'default': 'SOLR_SERVICE_SEARCH_HANDLER',
                'default_embedded_bigquery': 'SOLR_SERVICE_BIGQUERY_HANDLER',
+               'default_second_order' : 'SECOND_ORDER_SOLR_SERVICE_SEARCH_HANDLER',
+               'default_second_order_embdedded_bigquery': 'SECOND_ORDER_SOLR_SERVICE_BIGQUERY_HANDLER',
                'bot': 'BOT_SOLR_SERVICE_SEARCH_HANDLER',
                'bot_embedded_bigquery': 'BOT_SOLR_SERVICE_BIGQUERY_HANDLER'}
 
@@ -503,6 +554,8 @@ class Search(SolrInterface):
             request_token = forwarded_authorization[7:]
         else:
             request_token = request.headers.get('Authorization', [])[7:]
+        # In addition to checking for bots, determine if the query contains
+        # second order operators.
         if request_token in current_app.config.get('BOT_TOKENS', []):
             return "bot"
         else:

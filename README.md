@@ -19,6 +19,12 @@ If you wish to install the service locally:
 ```
 uv pip install --exclude-newer='2022-01-01' -r requirements.txt && uv pip install --exclude-newer='2022-01-01' -r dev-requirements.txt
 ```
+If you get an error like: error in ConcurrentLogHandler setup command: use_2to3 is invalid.
+try downgrading your setuptools package. Note, you also need to install wheel in the venv.
+```
+uv pip uninstall setuptools
+uv pip install setuptools==57.5.0 wheel
+```
   4. create a `solr/local_config.py` and point at your SOLR instance, example:
 
 ```
