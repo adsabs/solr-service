@@ -5,7 +5,7 @@ LOGGING_LEVEL = "INFO"
 LOG_STDOUT = True
 SOLR_SERVICE_VERSION = 'v4.10'
 # URL of the Solr service running the CitationGraphCache for second order queries
-SECOND_ORDER_SOLR_SERVICE_URL = os.environ.get('SECOND_ORDER_SOLR_SERVICE_URL', 'http://localhost:8983/solr')
+SECOND_ORDER_SOLR_SERVICE_URL = os.environ.get('SECOND_ORDER_SOLR_SERVICE_URL', 'http://localhost:8983/so_solr')
 SECOND_ORDER_SOLR_SERVICE_SEARCH_HANDLER = SECOND_ORDER_SOLR_SERVICE_URL + '/select'
 SECOND_ORDER_SOLR_SERVICE_BIGQUERY_HANDLER = SECOND_ORDER_SOLR_SERVICE_URL + '/bigquery'
 # URL of the Solr service running without the CitationGraphCache
