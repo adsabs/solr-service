@@ -11,9 +11,8 @@ from werkzeug.security import gen_salt
 from werkzeug.datastructures import MultiDict
 from io import BytesIO
 from solr.tests.mocks import MockSolrResponse
-from solr import views
 from solr.views import SolrInterface
-from models import Limits, Base
+from solr.models import Limits, Base
 import mock
 
 class TestSolrInterface(TestCase):
@@ -412,7 +411,7 @@ class TestWebservices(TestCase):
         out.status_code = 200
         out.headers = {}
 
-        with mock.patch.object(self.app.client, 'get', return_value=din) as get, \
+        with mock.patch(self.app.client, 'get', return_value=din) as get, \
             mock.patch('solr.views.requests.post', return_value=out) as post:
             r = self.client.post(url_for('bigquery'),
                                  query_string={'q': 'docs(library/hHGU1Ef-TpacAhicI3J8kQ)'},
@@ -420,7 +419,7 @@ class TestWebservices(TestCase):
             # it made a request to retrieve library
             get.assert_called()
             assert '/biblib/libraries/hHGU1Ef-TpacAhicI3J8kQ' in get.call_args[0][0]
-            '/solr/bigquery' in post.call_args[0]
+            assert '/solr/bigquery' in post.call_args[0]
             x = post.call_args[1]['files']['library/hHGU1Ef-TpacAhicI3J8kQ']
             assert x[2] == 'big-query/csv'
 
@@ -428,7 +427,7 @@ class TestWebservices(TestCase):
             'query': json.dumps({'query': 'q=foo&hHGU1Ef-TpacAhicI3J8kQ=foo+bar',
                                'bigquery': 'something'})
         }
-        with mock.patch.object(self.app.client, 'get', return_value=din) as get, \
+        with mock.patch(self.app.client, 'get', return_value=din) as get, \
             mock.patch('solr.views.requests.post', return_value=out) as post:
             r = self.client.post(url_for('bigquery'),
                                  query_string={'q': 'docs(hHGU1Ef-TpacAhicI3J8kQ)'},
@@ -436,7 +435,7 @@ class TestWebservices(TestCase):
             # it made a request to retrieve library
             get.assert_called()
             assert '/vault/query/hHGU1Ef-TpacAhicI3J8kQ' in get.call_args[0][0]
-            '/solr/bigquery' in post.call_args[0]
+            assert '/solr/bigquery' in post.call_args[0]
             x = post.call_args[1]['files']['hHGU1Ef-TpacAhicI3J8kQ']
             assert x[2] == 'big-query/csv'
 
@@ -445,7 +444,7 @@ class TestWebservices(TestCase):
             'query': json.dumps({'query': 'q=foo&hHGU1Ef-TpacAhicI3J8kQ=foo+bar',
                                  'bigquery': 'something'})
         }
-        with mock.patch.object(self.app.client, 'get', return_value=din) as get, \
+        with mock.patch(self.app.client, 'get', return_value=din) as get, \
             mock.patch('solr.views.requests.post', return_value=out) as post:
             r = self.client.post(url_for('bigquery'),
                                  query_string={'q': 'docs(hHGU1Ef-TpacAhicI3J8kQ)'},
@@ -453,14 +452,14 @@ class TestWebservices(TestCase):
             # it made a request to retrieve library
             get.assert_called()
             assert '/vault/query/hHGU1Ef-TpacAhicI3J8kQ' in get.call_args[0][0]
-            '/solr/bigquery' in post.call_args[0]
+            assert '/solr/bigquery' in post.call_args[0]
 
             x = post.call_args[1]['files']['hHGU1Ef-TpacAhicI3J8kQ']
             assert x[2] == 'big-query/csv'
 
 
         # we are sending another bigquery in data
-        with mock.patch.object(self.app.client, 'get', return_value=din) as get, \
+        with mock.patch(self.app.client, 'get', return_value=din) as get, \
             mock.patch('solr.views.requests.post', return_value=out) as post:
             r = self.client.post(url_for('bigquery'),
                                  content_type='multipart/form-data',
@@ -473,7 +472,7 @@ class TestWebservices(TestCase):
             # it made a request to retrieve library
             get.assert_called()
             assert '/vault/query/hHGU1Ef-TpacAhicI3J8kQ' in get.call_args[0][0]
-            '/solr/bigquery' in post.call_args[0]
+            assert '/solr/bigquery' in post.call_args[0]
 
             assert post.call_args[1]['files']['hHGU1Ef-TpacAhicI3J8kQ'][1] == 'foo bar'
             assert post.call_args[1]['files']['hHGU1Ef-TpacAhicI3J8kQ'][2] == 'big-query/csv'
@@ -483,7 +482,7 @@ class TestWebservices(TestCase):
 
 
         # and also allowed for GET requests
-        with mock.patch.object(self.app.client, 'get', return_value=din) as get, \
+        with mock.patch(self.app.client, 'get', return_value=din) as get, \
             mock.patch('solr.views.requests.post', return_value=out) as post:
             r = self.client.get(url_for('search'),
                                  query_string={'q': 'docs(hHGU1Ef-TpacAhicI3J8kQ)'},
@@ -491,13 +490,13 @@ class TestWebservices(TestCase):
             # it made a request to retrieve library
             get.assert_called()
             assert '/vault/query/hHGU1Ef-TpacAhicI3J8kQ' in get.call_args[0][0]
-            '/solr/bigquery' in post.call_args[0]
+            assert '/solr/bigquery' in post.call_args[0]
 
             assert post.call_args[1]['files']['hHGU1Ef-TpacAhicI3J8kQ'][1] == 'foo bar'
             assert post.call_args[1]['files']['hHGU1Ef-TpacAhicI3J8kQ'][2] == 'big-query/csv'
 
         # GET request with data in params
-        with mock.patch.object(self.app.client, 'get', return_value=din) as get, \
+        with mock.patch(self.app.client, 'get', return_value=din) as get, \
             mock.patch('solr.views.requests.post', return_value=out) as post:
             r = self.client.get(url_for('search'),
                                  query_string={'q': 'docs(hHGU1Ef-TpacAhicI3J8kQ)',
