@@ -18,6 +18,7 @@ def create_app(**config):
         app = ADSFlask(__name__, static_folder=None)
 
     app.url_map.strict_slashes = False
+    app.logger_name = 'solr-service'
 
     ## pysqlite driver breaks transactions, we have to apply some hacks as per
     ## http://docs.sqlalchemy.org/en/rel_0_9/dialects/sqlite.html#pysqlite-serializable
