@@ -74,8 +74,17 @@ class SolrInterface(Resource):
         handler_class = self.get_handler_class()
         # Before we check for bigquery, let's see if there are any citations(x), references(x) we can rewrite
         # and then check for routing to second_order query enabled server
-        query, rewrote_query = self.rewrite_citations(query)
-        has_second_order = self.is_second_order(query)
+        q = query.get('q', '')
+        # only if it is a single string
+        if isinstance(q, list) and len(q) == 1:
+            q_text = q[0]
+        else:
+            q_text = q
+
+        q_text, rewrote_query = self.rewrite_citations(q_text)
+        if rewrote_query:
+            query['q'] = q_text
+        has_second_order = self.is_second_order(q_text)
         if has_second_order:
             handler_class += '_second_order'
         #now check for the bigquery
