@@ -77,8 +77,9 @@ class SolrInterface(Resource):
         q = query.get('q', '')
         q_text, rewrote_query = self.rewrite_citations(q)
         if rewrote_query:
-            query['q'] = q
-        has_second_order = self.is_second_order(q)
+            query['q'] = q_text
+            current_app.logger.info(f'{q} rewritten to {q_text}')
+        has_second_order = self.is_second_order(q_text)
         if has_second_order:
             handler_class += '_second_order'
         #now check for the bigquery
@@ -117,15 +118,14 @@ class SolrInterface(Resource):
                 cookies=SolrInterface.set_cookies(request),
             )
         # if we get 0 results and we rewrote the query and it used identifier:
-        # try again by looking up the bibcode using the identifier.
-        if rewrote_query and len(r['hits']['hits']) == 0 and rewrote_query.startswith('identifier'):
+        if rewrote_query and len(r.json()['response']['numFound']) == 0 and rewrote_query.startswith('identifier'):
             bib_r = requests.post(
                 current_app.config[handler],
                 data={'q': rewrote_query, 'fl':'bibcode'},
                 headers=headers,
                 cookies=SolrInterface.set_cookies(request),
             )
-            bibcode = bib_r['hits']['hits'][0]['_source']['bibcode']
+            bibcode = bib_r.json()['response']['docs'][0]['bibcode']
             query['q'] = self.sub_bibcode(query['q'], bibcode)
             r = requests.post(
                 current_app.config[handler],
