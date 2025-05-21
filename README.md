@@ -31,7 +31,7 @@ uv pip install setuptools==57.5.0 wheel
 SOLR_SERVICE_URL='http://localhost:8983/solr'
 SECOND_ORDER_SOLR_SERVICE_URL='http://localhost:8983/solr'
 ```
-NB: these can be the same server.
+NB: these can be the same server. Note also, they actually should point to a collection name for local testing.
 
   5. start the solr-service `python cors.py`
 
