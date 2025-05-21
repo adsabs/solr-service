@@ -25,11 +25,14 @@ try downgrading your setuptools package. Note, you also need to install wheel in
 uv pip uninstall setuptools
 uv pip install setuptools==57.5.0 wheel
 ```
-  4. create a `solr/local_config.py` and point at your SOLR instance, example:
+  4. create a `solr/local_config.py` and point at your SOLR instances, one for queries that do not require the citation graph cache and one for second order queries. example:
 
 ```
 SOLR_SERVICE_URL='http://localhost:8983/solr'
+SECOND_ORDER_SOLR_SERVICE_URL='http://localhost:8983/solr'
 ```
+NB: these can be the same server.
+
   5. start the solr-service `python cors.py`
 
 
