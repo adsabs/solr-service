@@ -35,7 +35,6 @@ class StatusView(Resource):
 
 class SolrInterface(Resource):
     """Base class that responsible for forwarding a query to Solr"""
-    # TODO: add a second order query handler (new URL). The remaining parameters should all still work.
     handler = {
         'default': 'SOLR_SERVICE_URL',
         'default_embedded_bigquery': 'SOLR_SERVICE_BIGQUERY_HANDLER',
