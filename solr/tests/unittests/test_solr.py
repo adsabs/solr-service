@@ -176,14 +176,14 @@ class TestSolrInterface(TestCase):
         Simple tests of the rewrite citations query method
         """
         si = SolrInterface()
-        payload1 = {'fl': 'bibcode', 'q': 'citations(bibcode:2011MNRAS.   413..971D=1)'}
+        payload1 = {'fl': 'bibcode', 'q': ['citations(bibcode:2011MNRAS.413..971D=1)', 'and another thing']}
         payload2 = {'fl': 'bibcode', 'q': 'references(bibcode:2011MNRAS.413..971D=2)'}
         payload3 = {'fl': 'bibcode', 'q': 'citations(identifier:2011MNRAS.413..971D=3)'}
-        payload4 = {'fl': 'bibcode', 'q': 'references(identifier:2011MNRAS.413..971D=4)'}
+        payload4 = {'fl': 'bibcode', 'q': ['references(identifier:2011MNRAS.413..971D=4)']}
         payload5 = {'fl': ['id,bibcode,title,full,bar'], 'q': '*:*'}
         cleaned1, rewrote = si.rewrite_citations(payload1['q'])
         self.assertEqual(rewrote, None)
-        self.assertEqual(cleaned1, 'citations(bibcode:2011MNRAS.   413..971D=1)')
+        self.assertEqual(cleaned1, ['citations(bibcode:2011MNRAS.413..971D=1)', 'and another thing'])
         cleaned2, rewrote = si.rewrite_citations(payload2['q'])
         self.assertEqual(rewrote, 'bibcode')
         self.assertEqual(cleaned2, 'reference:2011MNRAS.413..971D=2')
@@ -192,7 +192,7 @@ class TestSolrInterface(TestCase):
         self.assertEqual(cleaned3, 'reference:2011MNRAS.413..971D=3')
         cleaned4, rewrote = si.rewrite_citations(payload4['q'])
         self.assertEqual(rewrote, 'identifier')
-        self.assertEqual(cleaned4, 'reference:2011MNRAS.413..971D=4')
+        self.assertEqual(cleaned4, ['reference:2011MNRAS.413..971D=4'])
         cleaned5, rewrote = si.rewrite_citations(payload5['q'])
         self.assertFalse(rewrote)
         self.assertEqual(cleaned5, '*:*')

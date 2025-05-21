@@ -75,16 +75,10 @@ class SolrInterface(Resource):
         # Before we check for bigquery, let's see if there are any citations(x), references(x) we can rewrite
         # and then check for routing to second_order query enabled server
         q = query.get('q', '')
-        # only if it is a single string
-        if isinstance(q, list) and len(q) == 1:
-            q_text = q[0]
-        else:
-            q_text = q
-
-        q_text, rewrote_query = self.rewrite_citations(q_text)
+        q_text, rewrote_query = self.rewrite_citations(q)
         if rewrote_query:
-            query['q'] = q_text
-        has_second_order = self.is_second_order(q_text)
+            query['q'] = q
+        has_second_order = self.is_second_order(q)
         if has_second_order:
             handler_class += '_second_order'
         #now check for the bigquery
@@ -519,22 +513,39 @@ class SolrInterface(Resource):
     """
     def rewrite_citations(self, query):
         # first check for a citations operator, then a references
+        # if the query is a list, it must be a single item.
+        # if it is a single string process it
+        q_text = None
+        is_list = False
+        if isinstance(query, list) and len(query) == 1:
+            q_text = query[0]
+            is_list = True
+        elif isinstance(query, str):
+            q_text = query
         tok = None
-        citation_match = self.citation_pattern.match(query)
+        if q_text is None:
+            return query, tok
+        citation_match = self.citation_pattern.match(q_text)
         if citation_match:
-            query = re.sub(self.citation_pattern, f'reference:{citation_match.group(3)}', query)
+            q_text = re.sub(self.citation_pattern, f'reference:{citation_match.group(3)}', q_text)
             tok = citation_match.group(2)
         else:
-            reference_match = self.reference_pattern.match(query)
+            reference_match = self.reference_pattern.match(q_text)
             if reference_match:
-                query = re.sub(self.reference_pattern, f'reference:{reference_match.group(3)}', query)
+                q_text = re.sub(self.reference_pattern, f'reference:{reference_match.group(3)}', q_text)
                 tok = reference_match.group(2)
+        query = [q_text] if is_list else q_text
         return query, tok
 
     """Given a query return True if it contains a second order operator, False if not.
     """
     def is_second_order(self, query):
-        return self.second_order_pattern.search(query)
+        q_text = None
+        if isinstance(query, list) and len(query) == 1:
+            q_text = query[0]
+        elif isinstance(query, str):
+            q_text = query
+        return self.second_order_pattern.search(q_text) if q_text else False
 
 class Tvrh(SolrInterface):
     """Exposes the solr term-vector histogram endpoint"""
