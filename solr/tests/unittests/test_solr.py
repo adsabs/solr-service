@@ -185,14 +185,14 @@ class TestSolrInterface(TestCase):
         self.assertEqual(rewrote, None)
         self.assertEqual(cleaned1, ['citations(bibcode:2011MNRAS.413..971D=1)', 'and another thing'])
         cleaned2, rewrote = si.rewrite_citations(payload2['q'])
-        self.assertEqual(rewrote, 'bibcode')
-        self.assertEqual(cleaned2, 'reference:2011MNRAS.413..971D=2')
+        self.assertEqual(rewrote, 'bibcode:2011MNRAS.413..971D=2')
+        self.assertEqual(cleaned2, 'citation:2011MNRAS.413..971D=2')
         cleaned3, rewrote = si.rewrite_citations(payload3['q'])
-        self.assertEqual(rewrote, 'identifier')
+        self.assertEqual(rewrote, 'identifier:2011MNRAS.413..971D=3')
         self.assertEqual(cleaned3, 'reference:2011MNRAS.413..971D=3')
         cleaned4, rewrote = si.rewrite_citations(payload4['q'])
-        self.assertEqual(rewrote, 'identifier')
-        self.assertEqual(cleaned4, ['reference:2011MNRAS.413..971D=4'])
+        self.assertEqual(rewrote, 'identifier:2011MNRAS.413..971D=4')
+        self.assertEqual(cleaned4, ['citation:2011MNRAS.413..971D=4'])
         cleaned5, rewrote = si.rewrite_citations(payload5['q'])
         self.assertFalse(rewrote)
         self.assertEqual(cleaned5, '*:*')
@@ -223,6 +223,12 @@ class TestSolrInterface(TestCase):
         query = "trending(identifier:2011MNRAS.413..971D=3) darmok and more fielded:query)"
         is_so = si.is_second_order(query)
         self.assertTrue(is_so)
+    def test_sub_bibcode(self):
+        si = SolrInterface()
+        query = "reference:abcde"
+        bibcode = "12345"
+        new_q = si.sub_bibcode(query, bibcode)
+        self.assertEqual(new_q, "reference:12345")
 
 class TestWebservices(TestCase):
 

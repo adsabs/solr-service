@@ -18,7 +18,7 @@ from sqlalchemy import or_
 from werkzeug.datastructures import MultiDict
 from io import StringIO
 from io import BytesIO
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, quote_from_bytes
 import re
 import requests # Do not use current_app.client but requests, to avoid re-using
                 # connections from a pool which would make solr ingress nginx
@@ -50,8 +50,8 @@ class SolrInterface(Resource):
             'X-Amzn-Trace-Id': 'Root=-',
         } # Pass to solr only for logging purposes, note that this will be returned back to the user by solr
         # compile them just once.
-        self.citation_pattern = re.compile('^(citations\((identifier|bibcode):([^\)\\s]+)\))$')
-        self.reference_pattern = re.compile('^(references\((identifier|bibcode):([^\)\\s]+)\))$')
+        self.citation_pattern = re.compile('^(citations\((identifier|bibcode):([^)\\s]+)\))$')
+        self.reference_pattern = re.compile('^(references\((identifier|bibcode):([^)\\s]+)\))$')
         self.second_order_pattern = re.compile('(?:citations)|(?:references)|(?:similar)|(?:topn)|(?:trending)|(?:useful)|(?:reviews)\(')
     def get_handler_class(self):
         return "default"
@@ -110,6 +110,23 @@ class SolrInterface(Resource):
                 cookies=SolrInterface.set_cookies(request),
             )
         else:
+            r = requests.post(
+                current_app.config[handler],
+                data=query,
+                headers=headers,
+                cookies=SolrInterface.set_cookies(request),
+            )
+        # if we get 0 results and we rewrote the query and it used identifier:
+        # try again by looking up the bibcode using the identifier.
+        if rewrote_query and len(r['hits']['hits']) == 0 and rewrote_query.startswith('identifier'):
+            bib_r = requests.post(
+                current_app.config[handler],
+                data={'q': rewrote_query, 'fl':'bibcode'},
+                headers=headers,
+                cookies=SolrInterface.set_cookies(request),
+            )
+            bibcode = bib_r['hits']['hits'][0]['_source']['bibcode']
+            query['q'] = self.sub_bibcode(query['q'], bibcode)
             r = requests.post(
                 current_app.config[handler],
                 data=query,
@@ -516,24 +533,24 @@ class SolrInterface(Resource):
         # if the query is a list, it must be a single item.
         # if it is a single string process it
         q_text = None
+        tok = None
         is_list = False
         if isinstance(query, list) and len(query) == 1:
             q_text = query[0]
             is_list = True
         elif isinstance(query, str):
             q_text = query
-        tok = None
         if q_text is None:
             return query, tok
         citation_match = self.citation_pattern.match(q_text)
         if citation_match:
             q_text = re.sub(self.citation_pattern, f'reference:{citation_match.group(3)}', q_text)
-            tok = citation_match.group(2)
+            tok = f'{citation_match.group(2)}:{citation_match.group(3)}'
         else:
             reference_match = self.reference_pattern.match(q_text)
             if reference_match:
-                q_text = re.sub(self.reference_pattern, f'reference:{reference_match.group(3)}', q_text)
-                tok = reference_match.group(2)
+                q_text = re.sub(self.reference_pattern, f'citation:{reference_match.group(3)}', q_text)
+                tok = f'{reference_match.group(2)}:{reference_match.group(3)}'
         query = [q_text] if is_list else q_text
         return query, tok
 
@@ -546,6 +563,16 @@ class SolrInterface(Resource):
         elif isinstance(query, str):
             q_text = query
         return self.second_order_pattern.search(q_text) if q_text else False
+    """Rewrite a query to contain a bibcode extracted by a separate fetch"""
+    @staticmethod
+    def sub_bibcode(query, bibcode):
+        q_text = None
+        if isinstance(query, list) and len(query) == 1:
+            q_text = query[0]
+        elif isinstance(query, str):
+            q_text = query
+        front = q_text[:q_text.find(':')]
+        return f'{front}:{bibcode}'
 
 class Tvrh(SolrInterface):
     """Exposes the solr term-vector histogram endpoint"""
