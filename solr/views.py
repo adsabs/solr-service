@@ -117,7 +117,7 @@ class SolrInterface(Resource):
                 cookies=SolrInterface.set_cookies(request),
             )
         # if we get 0 results and we rewrote the query and it used identifier:
-        if (r.json()['response']['numFound'] == 0) and rewrote_query and rewrote_query.startswith('identifier'):
+        if rewrote_query and (r.json()['response']['numFound'] == 0) and rewrote_query.startswith('identifier'):
             bib_r = requests.post(
                 current_app.config[handler],
                 data={'q': rewrote_query, 'fl':'bibcode'},
