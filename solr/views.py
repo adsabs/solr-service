@@ -517,7 +517,8 @@ class SolrInterface(Resource):
             params['start'] = params['start'] + maxr
 
         return out
-    """Given a query of the form
+    def rewrite_citations(self, query):
+        """Given a query of the form
         citations(identifier:xxxx) rewrite the query to reference:xxxx
         references(identifier:xxxx) rewrite the query to citation:xxxx
         Allow all other queries to return unmolested.
@@ -525,9 +526,8 @@ class SolrInterface(Resource):
         query, None if not matched
         NB: This only matches exact query strings. Complex queries get the slow path treatment.
         If the return code is bibcode, we know it can fast path, if not, we may need to
-        look up the bibcode (two step retrieval).
-    """
-    def rewrite_citations(self, query):
+        look up the bibcode (two step retrieval)."""
+
         # first check for a citations operator, then a references
         # if the query is a list, it must be a single item.
         # if it is a single string process it
@@ -553,18 +553,18 @@ class SolrInterface(Resource):
         query = [q_text] if is_list else q_text
         return query, tok
 
-    """Given a query return True if it contains a second order operator, False if not.
-    """
     def is_second_order(self, query):
+        """Given a query return True if it contains a second order operator, False if not."""
         q_text = None
         if isinstance(query, list) and len(query) == 1:
             q_text = query[0]
         elif isinstance(query, str):
             q_text = query
         return self.second_order_pattern.search(q_text) if q_text else False
-    """Rewrite a query to contain a bibcode extracted by a separate fetch"""
+
     @staticmethod
     def sub_bibcode(query, bibcode):
+        """Rewrite a query to contain a bibcode extracted by a separate fetch"""
         q_text = None
         if isinstance(query, list) and len(query) == 1:
             q_text = query[0]
@@ -585,7 +585,7 @@ class Search(SolrInterface):
     scopes = []
     rate_limit = [5000, 60*60*24]
     decorators = [advertise('scopes', 'rate_limit')]
-    #  Not sure where bots should go.
+    # # TODO: BotRedirect -  Not sure where bots should go.
     handler = {'default': 'SOLR_SERVICE_SEARCH_HANDLER',
                'default_embedded_bigquery': 'SOLR_SERVICE_BIGQUERY_HANDLER',
                'default_second_order' : 'SECOND_ORDER_SOLR_SERVICE_SEARCH_HANDLER',
