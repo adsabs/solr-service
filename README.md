@@ -33,6 +33,12 @@ SECOND_ORDER_SOLR_SERVICE_URL='http://localhost:8983/solr'
 ```
 NB: these can be the same server. Note also, they actually should point to a collection name for local testing.
 
+Note also that there are BOT versions of both of these URLs specified in the config.py:
+```
+BOT_SOLR_SERVICE_URL='http://localhost:8983/solr'
+SECOND_ORDER_BOT_SOLR_SERVICE_URL='http://localhost:8983/solr'
+```
+
   5. start the solr-service `python cors.py`
 
 
