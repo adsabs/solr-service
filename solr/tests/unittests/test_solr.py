@@ -171,59 +171,75 @@ class TestSolrInterface(TestCase):
             user_id='9')
         self.assertEqual(cleaned['fl'], u'id,bibcode,full,bar')
         self.assertEqual(cleaned['fq'], ['*:*', u'bibstem:apj', u'bibstem:apr'])
+
     def test_rewrite_citations(self):
         """
         Simple tests of the rewrite citations query method
         """
         si = SolrInterface()
-        payload1 = {'fl': 'bibcode', 'q': ['citations(bibcode:2011MNRAS.413..971D=1)', 'and another thing']}
-        payload2 = {'fl': 'bibcode', 'q': 'references(bibcode:2011MNRAS.413..971D=2)'}
-        payload3 = {'fl': 'bibcode', 'q': 'citations(identifier:2011MNRAS.413..971D=3)'}
-        payload4 = {'fl': 'bibcode', 'q': ['references(identifier:2011MNRAS.413..971D=4)']}
-        payload5 = {'fl': ['id,bibcode,title,full,bar'], 'q': '*:*'}
-        cleaned1, rewrote = si.rewrite_citations(payload1['q'])
+        payload = {'fl': 'bibcode', 'q': ['citations(bibcode:2011MNRAS.413..971D=1)', 'and another thing']}
+        cleaned, rewrote = si.rewrite_citations(payload['q'])
         self.assertEqual(rewrote, None)
-        self.assertEqual(cleaned1, ['citations(bibcode:2011MNRAS.413..971D=1)', 'and another thing'])
-        cleaned2, rewrote = si.rewrite_citations(payload2['q'])
+        self.assertEqual(cleaned, ['citations(bibcode:2011MNRAS.413..971D=1)', 'and another thing'])
+
+        payload = {'fl': 'bibcode', 'q': 'references(bibcode:2011MNRAS.413..971D=2)'}
+        cleaned, rewrote = si.rewrite_citations(payload['q'])
         self.assertEqual(rewrote, 'bibcode:2011MNRAS.413..971D=2')
-        self.assertEqual(cleaned2, 'citation:2011MNRAS.413..971D=2')
-        cleaned3, rewrote = si.rewrite_citations(payload3['q'])
+        self.assertEqual(cleaned, 'citation:2011MNRAS.413..971D=2')
+
+        payload = {'fl': 'bibcode', 'q': 'citations(identifier:2011MNRAS.413..971D=3)'}
+        cleaned, rewrote = si.rewrite_citations(payload['q'])
         self.assertEqual(rewrote, 'identifier:2011MNRAS.413..971D=3')
-        self.assertEqual(cleaned3, 'reference:2011MNRAS.413..971D=3')
-        cleaned4, rewrote = si.rewrite_citations(payload4['q'])
+        self.assertEqual(cleaned, 'reference:2011MNRAS.413..971D=3')
+
+        payload = {'fl': 'bibcode', 'q': ['references(identifier:2011MNRAS.413..971D=4)']}
+        cleaned, rewrote = si.rewrite_citations(payload['q'])
         self.assertEqual(rewrote, 'identifier:2011MNRAS.413..971D=4')
-        self.assertEqual(cleaned4, ['citation:2011MNRAS.413..971D=4'])
-        cleaned5, rewrote = si.rewrite_citations(payload5['q'])
+        self.assertEqual(cleaned, ['citation:2011MNRAS.413..971D=4'])
+
+        payload = {'fl': ['id,bibcode,title,full,bar'], 'q': '*:*'}
+        cleaned, rewrote = si.rewrite_citations(payload['q'])
         self.assertFalse(rewrote)
-        self.assertEqual(cleaned5, '*:*')
+        self.assertEqual(cleaned, '*:*')
 
     def test_is_second_order(self):
         """
-        Simple test of the cleanup classmethod
+        Simple test of the is_second_order regular expression matches
         """
         si = SolrInterface()
         query = "darmok and jalad at tanagra"
         is_so = si.is_second_order(query)
         self.assertFalse(is_so)
+
         query = "darmok and similar(jalad at tanagra)"
         is_so = si.is_second_order(query)
         self.assertTrue(is_so)
+
         query = "darmok and topn(similar(jalad at tanagra))"
         is_so = si.is_second_order(query)
         self.assertTrue(is_so)
+
         query = "darmok and reviews(identifier:2011MNRAS.413..971D=3) AND more"
         is_so = si.is_second_order(query)
         self.assertTrue(is_so)
+
         query = "useful(references(identifier:2011MNRAS.413..971D=3)) darmok and "
         is_so = si.is_second_order(query)
         self.assertTrue(is_so)
+
         query = "useful(citations(darmok and jalad)) darmok and "
         is_so = si.is_second_order(query)
         self.assertTrue(is_so)
+
         query = "trending(identifier:2011MNRAS.413..971D=3) darmok and more fielded:query)"
         is_so = si.is_second_order(query)
         self.assertTrue(is_so)
+
     def test_sub_bibcode(self):
+        """
+        Simple tests of the bibcode substitution method
+        """
+
         si = SolrInterface()
         query = "reference:abcde"
         bibcode = "12345"
