@@ -585,13 +585,15 @@ class Search(SolrInterface):
     scopes = []
     rate_limit = [5000, 60*60*24]
     decorators = [advertise('scopes', 'rate_limit')]
-    # # TODO: BotRedirect -  Not sure where bots should go.
     handler = {'default': 'SOLR_SERVICE_SEARCH_HANDLER',
                'default_embedded_bigquery': 'SOLR_SERVICE_BIGQUERY_HANDLER',
                'default_second_order' : 'SECOND_ORDER_SOLR_SERVICE_SEARCH_HANDLER',
                'default_second_order_embdedded_bigquery': 'SECOND_ORDER_SOLR_SERVICE_BIGQUERY_HANDLER',
                'bot': 'BOT_SOLR_SERVICE_SEARCH_HANDLER',
-               'bot_embedded_bigquery': 'BOT_SOLR_SERVICE_BIGQUERY_HANDLER'}
+               'bot_embedded_bigquery': 'BOT_SOLR_SERVICE_BIGQUERY_HANDLER',
+               'bot_second_order': 'SECOND_ORDER_BOT_SOLR_SERVICE_SEARCH_HANDLER',
+               'bot_second_order_embedded_bigquery': 'SECOND_ORDER_BOT_SOLR_SERVICE_BIGQUERY_HANDLER'}
+
 
     def get_handler_class(self):
         """Identify bot requests based on their authentication token"""
