@@ -602,8 +602,6 @@ class Search(SolrInterface):
             request_token = forwarded_authorization[7:]
         else:
             request_token = request.headers.get('Authorization', [])[7:]
-        # In addition to checking for bots, determine if the query contains
-        # second order operators.
         if request_token in current_app.config.get('BOT_TOKENS', []):
             return "bot"
         else:
