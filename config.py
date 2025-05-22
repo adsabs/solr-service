@@ -35,7 +35,7 @@ SOLR_SERVICE_ALLOWED_FIELDS = [
     'property', 'pub', 'pubdate', 'read_count', 'title', 'vizier', 'volume',
     'year'
 ]
-# TODO: does the BOT endpoint also need to be dispatched?
+# TODO: BotRedirect -  does the BOT endpoint also need to be dispatched?
 BOT_SOLR_SERVICE_URL = os.environ.get('BOT_SOLR_SERVICE_URL', SOLR_SERVICE_URL)
 BOT_SOLR_SERVICE_SEARCH_HANDLER = BOT_SOLR_SERVICE_URL + '/select'
 BOT_SOLR_SERVICE_BIGQUERY_HANDLER = BOT_SOLR_SERVICE_URL + '/bigquery'
