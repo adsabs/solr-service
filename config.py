@@ -35,7 +35,11 @@ SOLR_SERVICE_ALLOWED_FIELDS = [
     'property', 'pub', 'pubdate', 'read_count', 'title', 'vizier', 'volume',
     'year'
 ]
-# TODO: BotRedirect -  does the BOT endpoint also need to be dispatched?
+# URL of the Solr service running the CitationGraphCache for second order queries for BOTS
+SECOND_ORDER_BOT_SOLR_SERVICE_URL = os.environ.get('SECOND_ORDER_BOT_SOLR_SERVICE_URL', SECOND_ORDER_SOLR_SERVICE_URL)
+SECOND_ORDER_BOT_SOLR_SERVICE_SEARCH_HANDLER = SECOND_ORDER_BOT_SOLR_SERVICE_URL + '/select'
+SECOND_ORDER_BOT_SOLR_SERVICE_BIGQUERY_HANDLER = SECOND_ORDER_BOT_SOLR_SERVICE_URL + '/bigquery'
+# URL of the Solr service running without the CitationGraphCache for BOTS
 BOT_SOLR_SERVICE_URL = os.environ.get('BOT_SOLR_SERVICE_URL', SOLR_SERVICE_URL)
 BOT_SOLR_SERVICE_SEARCH_HANDLER = BOT_SOLR_SERVICE_URL + '/select'
 BOT_SOLR_SERVICE_BIGQUERY_HANDLER = BOT_SOLR_SERVICE_URL + '/bigquery'
