@@ -78,9 +78,7 @@ class SolrInterface(Resource):
         if rewrote_query:
             query['q'] = q_text
             current_app.logger.info(f'{q} rewritten to {q_text}')
-        has_second_order = self.is_second_order(q_text)
-        # if the query has [citations] in its fl parameter
-        has_second_order |= self.is_document_transform(query.get('fl', ''))
+        has_second_order = self.is_second_order(q_text) or self.is_document_transform(query.get('fl', ''))
         if has_second_order:
             handler_class += '_second_order'
         #now check for the bigquery
