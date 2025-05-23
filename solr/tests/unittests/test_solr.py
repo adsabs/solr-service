@@ -235,6 +235,35 @@ class TestSolrInterface(TestCase):
         is_so = si.is_second_order(query)
         self.assertTrue(is_so)
 
+    def test_is_document_transform(self):
+        """
+        Simple test of the is_second_order regular expression matches
+        """
+        si = SolrInterface()
+        fl = None
+        is_dt = si.is_document_transform(fl)
+        self.assertFalse(is_dt)
+
+        fl = ""
+        is_dt = si.is_document_transform(fl)
+        self.assertFalse(is_dt)
+
+        fl = "title&citation&author"
+        is_dt = si.is_document_transform(fl)
+        self.assertFalse(is_dt)
+
+        fl = ["title", "citation", "author"]
+        is_dt = si.is_document_transform(fl)
+        self.assertFalse(is_dt)
+
+        fl = "title&[citations]&author"
+        is_dt = si.is_document_transform(fl)
+        self.assertTrue(is_dt)
+
+        fl = ["title", "[citations]", "author"]
+        is_dt = si.is_document_transform(fl)
+        self.assertTrue(is_dt)
+
     def test_sub_bibcode(self):
         """
         Simple tests of the bibcode substitution method

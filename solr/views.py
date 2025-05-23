@@ -79,6 +79,8 @@ class SolrInterface(Resource):
             query['q'] = q_text
             current_app.logger.info(f'{q} rewritten to {q_text}')
         has_second_order = self.is_second_order(q_text)
+        # if the query has [citations] in its fl parameter
+        has_second_order |= self.is_document_transform(query.get('fl', ''))
         if has_second_order:
             handler_class += '_second_order'
         #now check for the bigquery
@@ -561,6 +563,15 @@ class SolrInterface(Resource):
         elif isinstance(query, str):
             q_text = query
         return self.second_order_pattern.search(q_text) if q_text else False
+
+    @staticmethod
+    def is_document_transform(field_list):
+        """Given a field list return True if it contains a [citations] DocumentTransform, False if not."""
+        if isinstance(field_list, list):
+            return any('[citations]' in field for field in field_list)
+        elif isinstance(field_list, str):
+            return '[citations]' in field_list
+        return False
 
     @staticmethod
     def sub_bibcode(query, bibcode):
