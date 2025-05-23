@@ -19,11 +19,26 @@ If you wish to install the service locally:
 ```
 uv pip install --exclude-newer='2022-01-01' -r requirements.txt && uv pip install --exclude-newer='2022-01-01' -r dev-requirements.txt
 ```
-  4. create a `solr/local_config.py` and point at your SOLR instance, example:
+If you get an error like: error in ConcurrentLogHandler setup command: use_2to3 is invalid.
+try downgrading your setuptools package. Note, you also need to install wheel in the venv.
+```
+uv pip uninstall setuptools
+uv pip install setuptools==57.5.0 wheel
+```
+  4. create a `solr/local_config.py` and point at your SOLR instances, one for queries that do not require the citation graph cache and one for second order queries. example:
 
 ```
 SOLR_SERVICE_URL='http://localhost:8983/solr'
+SECOND_ORDER_SOLR_SERVICE_URL='http://localhost:8983/solr'
 ```
+NB: these can be the same server. Note also, they actually should point to a collection name for local testing.
+
+Note also that there are BOT versions of both of these URLs specified in the config.py:
+```
+BOT_SOLR_SERVICE_URL='http://localhost:8983/solr'
+SECOND_ORDER_BOT_SOLR_SERVICE_URL='http://localhost:8983/solr'
+```
+
   5. start the solr-service `python cors.py`
 
 

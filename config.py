@@ -4,6 +4,11 @@ LOG_LEVEL = 30 # To be deprecated when all microservices use ADSFlask
 LOGGING_LEVEL = "INFO"
 LOG_STDOUT = True
 SOLR_SERVICE_VERSION = 'v4.10'
+# URL of the Solr service running the CitationGraphCache for second order queries
+SECOND_ORDER_SOLR_SERVICE_URL = os.environ.get('SECOND_ORDER_SOLR_SERVICE_URL', 'http://localhost:8983/so_solr')
+SECOND_ORDER_SOLR_SERVICE_SEARCH_HANDLER = SECOND_ORDER_SOLR_SERVICE_URL + '/select'
+SECOND_ORDER_SOLR_SERVICE_BIGQUERY_HANDLER = SECOND_ORDER_SOLR_SERVICE_URL + '/bigquery'
+# URL of the Solr service running without the CitationGraphCache
 SOLR_SERVICE_URL = os.environ.get('SOLR_SERVICE_URL', 'http://localhost:8983/solr')
 SOLR_SERVICE_TVRH_HANDLER = SOLR_SERVICE_URL + '/tvrh'
 SOLR_SERVICE_SEARCH_HANDLER = SOLR_SERVICE_URL + '/select'
@@ -30,6 +35,11 @@ SOLR_SERVICE_ALLOWED_FIELDS = [
     'property', 'pub', 'pubdate', 'read_count', 'title', 'vizier', 'volume',
     'year'
 ]
+# URL of the Solr service running the CitationGraphCache for second order queries for BOTS
+SECOND_ORDER_BOT_SOLR_SERVICE_URL = os.environ.get('SECOND_ORDER_BOT_SOLR_SERVICE_URL', SECOND_ORDER_SOLR_SERVICE_URL)
+SECOND_ORDER_BOT_SOLR_SERVICE_SEARCH_HANDLER = SECOND_ORDER_BOT_SOLR_SERVICE_URL + '/select'
+SECOND_ORDER_BOT_SOLR_SERVICE_BIGQUERY_HANDLER = SECOND_ORDER_BOT_SOLR_SERVICE_URL + '/bigquery'
+# URL of the Solr service running without the CitationGraphCache for BOTS
 BOT_SOLR_SERVICE_URL = os.environ.get('BOT_SOLR_SERVICE_URL', SOLR_SERVICE_URL)
 BOT_SOLR_SERVICE_SEARCH_HANDLER = BOT_SOLR_SERVICE_URL + '/select'
 BOT_SOLR_SERVICE_BIGQUERY_HANDLER = BOT_SOLR_SERVICE_URL + '/bigquery'

@@ -11,9 +11,8 @@ from werkzeug.security import gen_salt
 from werkzeug.datastructures import MultiDict
 from io import BytesIO
 from solr.tests.mocks import MockSolrResponse
-from solr import views
 from solr.views import SolrInterface
-from models import Limits, Base
+from solr.models import Limits, Base
 import mock
 
 class TestSolrInterface(TestCase):
@@ -173,6 +172,108 @@ class TestSolrInterface(TestCase):
         self.assertEqual(cleaned['fl'], u'id,bibcode,full,bar')
         self.assertEqual(cleaned['fq'], ['*:*', u'bibstem:apj', u'bibstem:apr'])
 
+    def test_rewrite_citations(self):
+        """
+        Simple tests of the rewrite citations query method
+        """
+        si = SolrInterface()
+        payload = {'fl': 'bibcode', 'q': ['citations(bibcode:2011MNRAS.413..971D=1)', 'and another thing']}
+        cleaned, rewrote = si.rewrite_citations(payload['q'])
+        self.assertEqual(rewrote, None)
+        self.assertEqual(cleaned, ['citations(bibcode:2011MNRAS.413..971D=1)', 'and another thing'])
+
+        payload = {'fl': 'bibcode', 'q': 'references(bibcode:2011MNRAS.413..971D=2)'}
+        cleaned, rewrote = si.rewrite_citations(payload['q'])
+        self.assertEqual(rewrote, 'bibcode:2011MNRAS.413..971D=2')
+        self.assertEqual(cleaned, 'citation:2011MNRAS.413..971D=2')
+
+        payload = {'fl': 'bibcode', 'q': 'citations(identifier:2011MNRAS.413..971D=3)'}
+        cleaned, rewrote = si.rewrite_citations(payload['q'])
+        self.assertEqual(rewrote, 'identifier:2011MNRAS.413..971D=3')
+        self.assertEqual(cleaned, 'reference:2011MNRAS.413..971D=3')
+
+        payload = {'fl': 'bibcode', 'q': ['references(identifier:2011MNRAS.413..971D=4)']}
+        cleaned, rewrote = si.rewrite_citations(payload['q'])
+        self.assertEqual(rewrote, 'identifier:2011MNRAS.413..971D=4')
+        self.assertEqual(cleaned, ['citation:2011MNRAS.413..971D=4'])
+
+        payload = {'fl': ['id,bibcode,title,full,bar'], 'q': '*:*'}
+        cleaned, rewrote = si.rewrite_citations(payload['q'])
+        self.assertFalse(rewrote)
+        self.assertEqual(cleaned, '*:*')
+
+    def test_is_second_order(self):
+        """
+        Simple test of the is_second_order regular expression matches
+        """
+        si = SolrInterface()
+        query = "darmok and jalad at tanagra"
+        is_so = si.is_second_order(query)
+        self.assertFalse(is_so)
+
+        query = "darmok and similar(jalad at tanagra)"
+        is_so = si.is_second_order(query)
+        self.assertTrue(is_so)
+
+        query = "darmok and topn(similar(jalad at tanagra))"
+        is_so = si.is_second_order(query)
+        self.assertTrue(is_so)
+
+        query = "darmok and reviews(identifier:2011MNRAS.413..971D=3) AND more"
+        is_so = si.is_second_order(query)
+        self.assertTrue(is_so)
+
+        query = "useful(references(identifier:2011MNRAS.413..971D=3)) darmok and "
+        is_so = si.is_second_order(query)
+        self.assertTrue(is_so)
+
+        query = "useful(citations(darmok and jalad)) darmok and "
+        is_so = si.is_second_order(query)
+        self.assertTrue(is_so)
+
+        query = "trending(identifier:2011MNRAS.413..971D=3) darmok and more fielded:query)"
+        is_so = si.is_second_order(query)
+        self.assertTrue(is_so)
+
+    def test_is_document_transform(self):
+        """
+        Simple test of the is_second_order regular expression matches
+        """
+        si = SolrInterface()
+        fl = None
+        is_dt = si.is_document_transform(fl)
+        self.assertFalse(is_dt)
+
+        fl = ""
+        is_dt = si.is_document_transform(fl)
+        self.assertFalse(is_dt)
+
+        fl = "title&citation&author"
+        is_dt = si.is_document_transform(fl)
+        self.assertFalse(is_dt)
+
+        fl = ["title", "citation", "author"]
+        is_dt = si.is_document_transform(fl)
+        self.assertFalse(is_dt)
+
+        fl = "title&[citations]&author"
+        is_dt = si.is_document_transform(fl)
+        self.assertTrue(is_dt)
+
+        fl = ["title", "[citations]", "author"]
+        is_dt = si.is_document_transform(fl)
+        self.assertTrue(is_dt)
+
+    def test_sub_bibcode(self):
+        """
+        Simple tests of the bibcode substitution method
+        """
+
+        si = SolrInterface()
+        query = "reference:abcde"
+        bibcode = "12345"
+        new_q = si.sub_bibcode(query, bibcode)
+        self.assertEqual(new_q, "reference:12345")
 
 class TestWebservices(TestCase):
 

@@ -1,5 +1,6 @@
 from __future__ import absolute_import
 from future import standard_library
+
 standard_library.install_aliases()
 from builtins import str
 from past.builtins import basestring
@@ -17,8 +18,8 @@ from sqlalchemy import or_
 from werkzeug.datastructures import MultiDict
 from io import StringIO
 from io import BytesIO
-from urllib.parse import parse_qs
-
+from urllib.parse import parse_qs, quote_from_bytes
+import re
 import requests # Do not use current_app.client but requests, to avoid re-using
                 # connections from a pool which would make solr ingress nginx
                 # not set cookies with the affinity hash sroute
@@ -34,7 +35,12 @@ class StatusView(Resource):
 
 class SolrInterface(Resource):
     """Base class that responsible for forwarding a query to Solr"""
-    handler = {'default': 'SOLR_SERVICE_URL', 'default_embedded_bigquery': 'SOLR_SERVICE_BIGQUERY_HANDLER'}
+    handler = {
+        'default': 'SOLR_SERVICE_URL',
+        'default_embedded_bigquery': 'SOLR_SERVICE_BIGQUERY_HANDLER',
+        'default_second_order' : 'SECOND_ORDER_SOLR_SERVICE_SEARCH_HANDLER',
+        'default_second_order_embdedded_bigquery': 'SECOND_ORDER_SOLR_SERVICE_BIGQUERY_HANDLER'
+    }
 
     def __init__(self, *args, **kwargs):
         Resource.__init__(self, *args, **kwargs)
@@ -42,12 +48,16 @@ class SolrInterface(Resource):
         self.internal_logging_params = {
             'X-Amzn-Trace-Id': 'Root=-',
         } # Pass to solr only for logging purposes, note that this will be returned back to the user by solr
-
+        # compile them just once.
+        self.citation_pattern = re.compile('^(citations\((identifier|bibcode):([^)\\s]+)\))$')
+        self.reference_pattern = re.compile('^(references\((identifier|bibcode):([^)\\s]+)\))$')
+        self.second_order_pattern = re.compile('(?:citations)|(?:references)|(?:similar)|(?:topn)|(?:trending)|(?:useful)|(?:reviews)\(')
     def get_handler_class(self):
         return "default"
 
     def get(self):
         query, headers = self.cleanup_solr_request(request.args.to_dict(flat=False))
+        #Here we can identify second-order queries and reroute to the second order handler.
 
         # trickery, we can accept docs() operator if it is part of form data
         # I tried to search whether it is a valid move to send multipart
@@ -61,6 +71,17 @@ class SolrInterface(Resource):
         # so I *think* this should be safe...
 
         handler_class = self.get_handler_class()
+        # Before we check for bigquery, let's see if there are any citations(x), references(x) we can rewrite
+        # and then check for routing to second_order query enabled server
+        q = query.get('q', '')
+        q_text, rewrote_query = self.rewrite_citations(q)
+        if rewrote_query:
+            query['q'] = q_text
+            current_app.logger.info(f'{q} rewritten to {q_text}')
+        has_second_order = self.is_second_order(q_text) or self.is_document_transform(query.get('fl', ''))
+        if has_second_order:
+            handler_class += '_second_order'
+        #now check for the bigquery
         files = self.check_for_embedded_bigquery(query, request, headers, handler_class=handler_class)
         if files and len(files): # must be directed to /bigquery
             handler_class += '_embedded_bigquery'
@@ -77,6 +98,9 @@ class SolrInterface(Resource):
             current_app.logger.info("Dispatching 'POST' request to endpoint '{}' for user '{}'".format(current_app.config[handler], current_user_id))
         else:
             current_app.logger.info("Dispatching 'POST' request to endpoint '{}'".format(current_app.config[handler]))
+        # if we rewrote the query, we might (unlikely) have gotten an identifier that is not a bibcode
+        # so we have to test it there 0 results ( a rewrite should only have 1 result ) and if so
+        # then look up the bibcode from the identifier (extra solr call) then run the query again.
         if files and len(files): # must be directed to /bigquery
             r = requests.post(
                 current_app.config[handler],
@@ -86,6 +110,22 @@ class SolrInterface(Resource):
                 cookies=SolrInterface.set_cookies(request),
             )
         else:
+            r = requests.post(
+                current_app.config[handler],
+                data=query,
+                headers=headers,
+                cookies=SolrInterface.set_cookies(request),
+            )
+        # if we get 0 results and we rewrote the query and it used identifier:
+        if rewrote_query and (r.json()['response']['numFound'] == 0) and rewrote_query.startswith('identifier'):
+            bib_r = requests.post(
+                current_app.config[handler],
+                data={'q': rewrote_query, 'fl':'bibcode'},
+                headers=headers,
+                cookies=SolrInterface.set_cookies(request),
+            )
+            bibcode = bib_r.json()['response']['docs'][0]['bibcode']
+            query['q'] = self.sub_bibcode(query['q'], bibcode)
             r = requests.post(
                 current_app.config[handler],
                 data=query,
@@ -477,7 +517,70 @@ class SolrInterface(Resource):
             params['start'] = params['start'] + maxr
 
         return out
+    def rewrite_citations(self, query):
+        """Given a query of the form
+        citations(identifier:xxxx) rewrite the query to reference:xxxx
+        references(identifier:xxxx) rewrite the query to citation:xxxx
+        Allow all other queries to return unmolested.
+        returns the query, identifier or bibcode based on match if query was rewritten
+        query, None if not matched
+        NB: This only matches exact query strings. Complex queries get the slow path treatment.
+        If the return code is bibcode, we know it can fast path, if not, we may need to
+        look up the bibcode (two step retrieval)."""
 
+        # first check for a citations operator, then a references
+        # if the query is a list, it must be a single item.
+        # if it is a single string process it
+        q_text = None
+        tok = None
+        is_list = False
+        if isinstance(query, list) and len(query) == 1:
+            q_text = query[0]
+            is_list = True
+        elif isinstance(query, str):
+            q_text = query
+        if q_text is None:
+            return query, tok
+        citation_match = self.citation_pattern.match(q_text)
+        if citation_match:
+            q_text = re.sub(self.citation_pattern, f'reference:{citation_match.group(3)}', q_text)
+            tok = f'{citation_match.group(2)}:{citation_match.group(3)}'
+        else:
+            reference_match = self.reference_pattern.match(q_text)
+            if reference_match:
+                q_text = re.sub(self.reference_pattern, f'citation:{reference_match.group(3)}', q_text)
+                tok = f'{reference_match.group(2)}:{reference_match.group(3)}'
+        query = [q_text] if is_list else q_text
+        return query, tok
+
+    def is_second_order(self, query):
+        """Given a query return True if it contains a second order operator, False if not."""
+        q_text = None
+        if isinstance(query, list) and len(query) == 1:
+            q_text = query[0]
+        elif isinstance(query, str):
+            q_text = query
+        return self.second_order_pattern.search(q_text) if q_text else False
+
+    @staticmethod
+    def is_document_transform(field_list):
+        """Given a field list return True if it contains a [citations] DocumentTransform, False if not."""
+        if isinstance(field_list, list):
+            return any('[citations]' in field for field in field_list)
+        elif isinstance(field_list, str):
+            return '[citations]' in field_list
+        return False
+
+    @staticmethod
+    def sub_bibcode(query, bibcode):
+        """Rewrite a query to contain a bibcode extracted by a separate fetch"""
+        q_text = None
+        if isinstance(query, list) and len(query) == 1:
+            q_text = query[0]
+        elif isinstance(query, str):
+            q_text = query
+        front = q_text[:q_text.find(':')]
+        return f'{front}:{bibcode}'
 
 class Tvrh(SolrInterface):
     """Exposes the solr term-vector histogram endpoint"""
@@ -493,8 +596,13 @@ class Search(SolrInterface):
     decorators = [advertise('scopes', 'rate_limit')]
     handler = {'default': 'SOLR_SERVICE_SEARCH_HANDLER',
                'default_embedded_bigquery': 'SOLR_SERVICE_BIGQUERY_HANDLER',
+               'default_second_order' : 'SECOND_ORDER_SOLR_SERVICE_SEARCH_HANDLER',
+               'default_second_order_embdedded_bigquery': 'SECOND_ORDER_SOLR_SERVICE_BIGQUERY_HANDLER',
                'bot': 'BOT_SOLR_SERVICE_SEARCH_HANDLER',
-               'bot_embedded_bigquery': 'BOT_SOLR_SERVICE_BIGQUERY_HANDLER'}
+               'bot_embedded_bigquery': 'BOT_SOLR_SERVICE_BIGQUERY_HANDLER',
+               'bot_second_order': 'SECOND_ORDER_BOT_SOLR_SERVICE_SEARCH_HANDLER',
+               'bot_second_order_embedded_bigquery': 'SECOND_ORDER_BOT_SOLR_SERVICE_BIGQUERY_HANDLER'}
+
 
     def get_handler_class(self):
         """Identify bot requests based on their authentication token"""
