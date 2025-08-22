@@ -71,6 +71,20 @@ class SolrInterface(Resource):
             handler_class += '_embedded_bigquery'
         handler = self.handler.get(handler_class, self.handler.get("default"))
 
+        should_postprocess_response = False
+
+        unhighlightable_publishers = current_app.config.get('SOLR_SERVICE_DISALLOWED_HIGHLIGHTS_PUBLISHERS', [])
+        default_fields = current_app.config.get('SOLR_SERVICE_DEFAULT_FIELDS', [])
+
+        if default_fields and handler == 'SOLR_SERVICE_SEARCH_HANDLER':
+            if 'fl' not in query:
+                query['fl'] = ",".join(default_fields)
+
+            if unhighlightable_publishers and 'hl' in query:
+                if 'publisher' not in query['fl']:
+                    query['fl'] = query['fl'] + ',publisher'
+                should_postprocess_response = True
+
         try:
             current_user_id = current_user.get_id()
         except:
@@ -98,6 +112,39 @@ class SolrInterface(Resource):
                 cookies=SolrInterface.set_cookies(request),
             )
         current_app.logger.info("Received response from from endpoint '{}' with status code '{}'".format(current_app.config[handler], r.status_code))
+
+        if should_postprocess_response and r.ok:
+            try:
+                response_data = r.json()
+                unhighlightable_docs = []
+
+                for doc in response_data['response']['docs']:
+                    if 'publisher' not in doc:
+                        continue
+
+                    if type(doc['publisher']) is list:
+                        for publisher in doc['publisher']:
+                            if publisher.lower() in unhighlightable_publishers:
+                                unhighlightable_docs.append(doc['id'])
+                                break
+                    else:
+                        if doc['publisher'].lower() in unhighlightable_publishers:
+                            unhighlightable_docs.append(doc['id'])
+
+                for remove_doc in unhighlightable_docs:
+                    if remove_doc in response_data['highlighting']:
+                        doc_highlights = response_data['highlighting'][remove_doc]
+
+                        for remove_key in ['body', 'ack']:
+                            if remove_key in doc_highlights:
+                                del doc_highlights[remove_key]
+
+                response_data['filtered'] = 'true'
+
+                return json.dumps(response_data), r.status_code, r.headers
+            except Exception as e:
+                current_app.logger.error(e.with_traceback())
+
         return r.text, r.status_code, r.headers
 
     @staticmethod
@@ -214,13 +261,21 @@ class SolrInterface(Resource):
                 payload['timeAllowed'] = time_allowed
 
         max_hl = current_app.config.get('SOLR_SERVICE_MAX_SNIPPETS', 4)
-        max_frag = current_app.config.get('SOLR_SERVICE_MAX_FRAGSIZE', 100)
+        max_frag = current_app.config.get('SOLR_SERVICE_MAX_FRAGSIZE', 200)
+
+        # Highlight queries need to be limited per publisher agreements,
+        # so inject the limit terms if they don't exist.
+        if 'hl' in payload:
+            if 'hl.maxHighlightCharacters' not in payload:
+                payload['hl.maxHighlightCharacters'] = max_frag
+
         for k,v in list(payload.items()):
             if 'hl.' in k:
                 if '.snippets' in k:
                     payload[k] = max(0, min(_safe_int(v, default=max_hl), max_hl))
                 elif '.fragsize' in k:
                     payload[k] = max(1, min(_safe_int(v, default=max_frag), max_frag)) #0 would return whole field
+                    payload['hl.maxHighlightCharacters'] = payload[k]
             if k == 'hl.fl':
                 self._cleanup_fields(payload, k, current_app.config.get('SOLR_SERVICE_ALLOWED_HIGHLIGHTS_FIELDS'))
             if k == 'fl' or ('.fl' in k and k != 'hl.fl'):
