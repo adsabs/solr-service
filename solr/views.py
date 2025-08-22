@@ -87,6 +87,7 @@ class SolrInterface(Resource):
 
         boost_type_map = current_app.config.get('SOLR_SERVICE_BOOST_TYPES', dict())
         if boost_type_map and 'boostType' in query and query['boostType'] in boost_type_map:
+            import pdb; pdb.set_trace()
             query['defType'] = 'adismax'
             query['boost'] = boost_type_map[query['boostType']]
 
