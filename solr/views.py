@@ -48,6 +48,11 @@ class SolrInterface(Resource):
 
     def get(self):
         query, headers = self.cleanup_solr_request(request.args.to_dict(flat=False))
+        if current_app.config.get("SOLR_INJECT_QUERY_PARAMS", {}):
+            injected_params = current_app.config.get("SOLR_INJECT_QUERY_PARAMS", {})
+            for injected_param,value in injected_params.items():
+                if injected_param not in query.keys():
+                    query[injected_param] = value
 
         # trickery, we can accept docs() operator if it is part of form data
         # I tried to search whether it is a valid move to send multipart
