@@ -85,6 +85,11 @@ class SolrInterface(Resource):
                     query['fl'] = query['fl'] + ',publisher'
                 should_postprocess_response = True
 
+        boost_type_map = current_app.config.get('SOLR_SERVICE_BOOST_TYPES', dict())
+        if boost_type_map and query['boostType'] and query['boostType'] in boost_type_map:
+            query['defType'] = 'adismax'
+            query['boost'] = boost_type_map[query['boostType']]
+
         try:
             current_user_id = current_user.get_id()
         except:
