@@ -93,7 +93,8 @@ class SolrInterface(Resource):
             elif isinstance(query['boostType'], list):
                 boost_types = query['boostType']
 
-            query['defType'] = 'adismax'
+            if 'defType' not in query:
+                query['defType'] = 'adismax'
             query['boost'] = " ".join([boost_type_map[boost_type] for boost_type in boost_types
                                        if boost_type in boost_type_map])
 
