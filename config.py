@@ -19,6 +19,7 @@ SOLR_SERVICE_ALLOWED_HIGHLIGHTS_FIELDS = ['title', 'abstract']
 SOLR_SERVICE_DISALLOWED_HIGHLIGHTS_PUBLISHERS = ['ieee']
 SOLR_SERVICE_ALLOWED_SORT_FIELDS = ['id asc', 'author_count asc', 'bibcode asc', 'citation_count asc', 'citation_count_norm asc', 'classic_factor asc', 'first_author asc', 'date asc', 'entry_date asc', 'read_count asc', 'score asc', 'id desc', 'author_count desc', 'bibcode desc', 'citation_count desc', 'citation_count_norm desc', 'classic_factor desc', 'first_author desc', 'date desc', 'entry_date desc', 'read_count desc', 'score desc',]
 #SOLR_SERVICE_TIME_ALLOWED_MS = 60000
+SOLR_SERVICE_BOOST_TYPES = {'astrophysics': 'astronomy_final_boost', 'physics': 'physics_final_boost', 'earthscience': 'earth_science_final_boost', 'planetary': 'planetary_science_final_boost', 'heliophysics': 'heliophysics_final_boost', 'general': 'general_final_boost'}
 SOLR_SERVICE_MAX_ROWS = 2000
 SOLR_SERVICE_DEFAULT_ROWS = 10
 SOLR_INJECT_QUERY_PARAMS = dict()

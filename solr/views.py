@@ -85,6 +85,19 @@ class SolrInterface(Resource):
                     query['fl'] = query['fl'] + ',publisher'
                 should_postprocess_response = True
 
+        boost_type_map = current_app.config.get('SOLR_SERVICE_BOOST_TYPES', dict())
+        if boost_type_map and 'boostType' in query:
+            boost_types = []
+            if isinstance(query['boostType'], str):
+                boost_types = [query['boostType']]
+            elif isinstance(query['boostType'], list):
+                boost_types = query['boostType']
+
+            if 'defType' not in query:
+                query['defType'] = 'aqp'
+            query['boost'] = " ".join([boost_type_map[boost_type] for boost_type in boost_types
+                                       if boost_type in boost_type_map])
+
         try:
             current_user_id = current_user.get_id()
         except:
