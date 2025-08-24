@@ -94,7 +94,7 @@ class SolrInterface(Resource):
                 boost_types = query['boostType']
 
             if 'defType' not in query:
-                query['defType'] = 'adismax'
+                query['defType'] = 'aqp'
             query['boost'] = " ".join([boost_type_map[boost_type] for boost_type in boost_types
                                        if boost_type in boost_type_map])
 
