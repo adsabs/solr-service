@@ -1,4 +1,7 @@
 from __future__ import absolute_import
+
+import re
+
 from future import standard_library
 standard_library.install_aliases()
 from builtins import str
@@ -123,6 +126,10 @@ class SolrInterface(Resource):
             if 'fl' not in query:
                 query['fl'] = ",".join(default_fields)
 
+            # We now post-process highlights with a windowing function to restrict the total text returned
+            if 'hl' in query:
+                should_postprocess_response = True
+
             if unhighlightable_publishers and 'hl' in query:
                 if 'publisher' not in query['fl']:
                     query['fl'] = query['fl'] + ',publisher'
@@ -169,9 +176,37 @@ class SolrInterface(Resource):
                     if remove_key in doc_highlights:
                         del doc_highlights[remove_key]
 
+        max_frag = current_app.config.get('SOLR_SERVICE_MAX_FRAGSIZE', 200)
+        for doc_id in list(response_data['highlighting'].keys()):
+            current_highlights = response_data['highlighting'][doc_id]
+            new_highlights = dict()
+
+            for field in current_highlights.keys():
+                new_highlights[field] = [
+                    windowed_highlight
+                    for highlight in current_highlights[field]
+                    for windowed_highlight in self.apply_highlight_window(highlight, max_frag)
+                ]
+
+            response_data['highlighting'][doc_id] = new_highlights
+
         response_data['filtered'] = 'true'
 
         return response_data
+
+    def apply_highlight_window(self, highlight_text: str, max_len: int) -> list[str]:
+        highlight_pattern = re.compile(r'<em>.*</em>', re.IGNORECASE)
+        windowed_snippets = []
+
+        for match in re.finditer(highlight_pattern, highlight_text):
+            start, end = match.span()
+            if end - start >= max_len:
+                continue
+
+            diff = (max_len - (end - start))//2
+            windowed_snippets.append(highlight_text[max(0, start-diff):end+diff-min(0, start-diff)])
+
+        return windowed_snippets
 
     @staticmethod
     def set_cookies(request):
@@ -287,7 +322,7 @@ class SolrInterface(Resource):
                 payload['timeAllowed'] = time_allowed
 
         max_hl = current_app.config.get('SOLR_SERVICE_MAX_SNIPPETS', 4)
-        max_frag = current_app.config.get('SOLR_SERVICE_MAX_FRAGSIZE', 200)*2
+        max_frag = current_app.config.get('SOLR_SERVICE_MAX_FRAGSIZE', 200)*4
 
         # Highlight queries need to be limited per publisher agreements,
         # so inject the limit terms if they don't exist.
