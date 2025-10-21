@@ -21,6 +21,7 @@ from werkzeug.datastructures import MultiDict
 from io import StringIO
 from io import BytesIO
 from urllib.parse import parse_qs
+from typing import List
 
 import requests # Do not use current_app.client but requests, to avoid re-using
                 # connections from a pool which would make solr ingress nginx
@@ -194,7 +195,7 @@ class SolrInterface(Resource):
 
         return response_data
 
-    def apply_highlight_window(self, highlight_text: str, max_len: int) -> list[str]:
+    def apply_highlight_window(self, highlight_text: str, max_len: int) -> List[str]:
         highlight_pattern = re.compile(r'<em>.*</em>', re.IGNORECASE)
         windowed_snippets = []
 
