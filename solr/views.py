@@ -48,11 +48,6 @@ class SolrInterface(Resource):
 
     def get(self):
         query, headers = self.cleanup_solr_request(request.args.to_dict(flat=False))
-        if current_app.config.get("SOLR_INJECT_QUERY_PARAMS", {}):
-            injected_params = current_app.config.get("SOLR_INJECT_QUERY_PARAMS", {})
-            for injected_param,value in injected_params.items():
-                if injected_param not in query.keys():
-                    query[injected_param] = value
 
         # trickery, we can accept docs() operator if it is part of form data
         # I tried to search whether it is a valid move to send multipart
@@ -71,32 +66,7 @@ class SolrInterface(Resource):
             handler_class += '_embedded_bigquery'
         handler = self.handler.get(handler_class, self.handler.get("default"))
 
-        should_postprocess_response = False
-
-        unhighlightable_publishers = current_app.config.get('SOLR_SERVICE_DISALLOWED_HIGHLIGHTS_PUBLISHERS', [])
-        default_fields = current_app.config.get('SOLR_SERVICE_DEFAULT_FIELDS', [])
-
-        if default_fields and handler == 'SOLR_SERVICE_SEARCH_HANDLER':
-            if 'fl' not in query:
-                query['fl'] = ",".join(default_fields)
-
-            if unhighlightable_publishers and 'hl' in query:
-                if 'publisher' not in query['fl']:
-                    query['fl'] = query['fl'] + ',publisher'
-                should_postprocess_response = True
-
-        boost_type_map = current_app.config.get('SOLR_SERVICE_BOOST_TYPES', dict())
-        if boost_type_map and 'boostType' in query:
-            boost_types = []
-            if isinstance(query['boostType'], str):
-                boost_types = [query['boostType']]
-            elif isinstance(query['boostType'], list):
-                boost_types = query['boostType']
-
-            if 'defType' not in query:
-                query['defType'] = 'aqp'
-            query['boost'] = " ".join([boost_type_map[boost_type] for boost_type in boost_types
-                                       if boost_type in boost_type_map])
+        should_postprocess_response, unhighlightable_publishers = self.preprocess_request(handler, query)
 
         try:
             current_user_id = current_user.get_id()
@@ -126,39 +96,82 @@ class SolrInterface(Resource):
             )
         current_app.logger.info("Received response from from endpoint '{}' with status code '{}'".format(current_app.config[handler], r.status_code))
 
+        # Run this if we've identified a need to alter the response from Solr
         if should_postprocess_response and r.ok:
             try:
-                response_data = r.json()
-                unhighlightable_docs = []
-
-                for doc in response_data['response']['docs']:
-                    if 'publisher' not in doc:
-                        continue
-
-                    if type(doc['publisher']) is list:
-                        for publisher in doc['publisher']:
-                            if publisher.lower() in unhighlightable_publishers:
-                                unhighlightable_docs.append(doc['id'])
-                                break
-                    else:
-                        if doc['publisher'].lower() in unhighlightable_publishers:
-                            unhighlightable_docs.append(doc['id'])
-
-                for remove_doc in unhighlightable_docs:
-                    if remove_doc in response_data['highlighting']:
-                        doc_highlights = response_data['highlighting'][remove_doc]
-
-                        for remove_key in ['body', 'ack']:
-                            if remove_key in doc_highlights:
-                                del doc_highlights[remove_key]
-
-                response_data['filtered'] = 'true'
+                response_data = self.postprocess_response(r)
 
                 return json.dumps(response_data), r.status_code, r.headers
             except Exception as e:
                 current_app.logger.error(e.with_traceback())
 
         return r.text, r.status_code, r.headers
+
+    def preprocess_request(self, handler: str, query) -> bool:
+        should_postprocess_response = False
+
+        if current_app.config.get("SOLR_INJECT_QUERY_PARAMS", {}):
+            injected_params = current_app.config.get("SOLR_INJECT_QUERY_PARAMS", {})
+            for injected_param, value in injected_params.items():
+                if injected_param not in query.keys():
+                    query[injected_param] = value
+
+        unhighlightable_publishers = current_app.config.get('SOLR_SERVICE_DISALLOWED_HIGHLIGHTS_PUBLISHERS', [])
+        default_fields = current_app.config.get('SOLR_SERVICE_DEFAULT_FIELDS', [])
+
+        if default_fields and handler == 'SOLR_SERVICE_SEARCH_HANDLER':
+            if 'fl' not in query:
+                query['fl'] = ",".join(default_fields)
+
+            if unhighlightable_publishers and 'hl' in query:
+                if 'publisher' not in query['fl']:
+                    query['fl'] = query['fl'] + ',publisher'
+                should_postprocess_response = True
+
+        boost_type_map = current_app.config.get('SOLR_SERVICE_BOOST_TYPES', dict())
+        if boost_type_map and 'boostType' in query:
+            boost_types = []
+            if isinstance(query['boostType'], str):
+                boost_types = [query['boostType']]
+            elif isinstance(query['boostType'], list):
+                boost_types = query['boostType']
+
+            if 'defType' not in query:
+                query['defType'] = 'aqp'
+            query['boost'] = " ".join([boost_type_map[boost_type] for boost_type in boost_types
+                                       if boost_type in boost_type_map])
+
+        return should_postprocess_response
+
+    def postprocess_response(self, r: requests.Response) -> dict:
+        response_data = r.json()
+        unhighlightable_publishers = current_app.config.get('SOLR_SERVICE_DISALLOWED_HIGHLIGHTS_PUBLISHERS', [])
+        unhighlightable_docs = []
+
+        for doc in response_data['response']['docs']:
+            if 'publisher' not in doc:
+                continue
+
+            if type(doc['publisher']) is list:
+                for publisher in doc['publisher']:
+                    if publisher.lower() in unhighlightable_publishers:
+                        unhighlightable_docs.append(doc['id'])
+                        break
+            else:
+                if doc['publisher'].lower() in unhighlightable_publishers:
+                    unhighlightable_docs.append(doc['id'])
+
+        for remove_doc in unhighlightable_docs:
+            if remove_doc in response_data['highlighting']:
+                doc_highlights = response_data['highlighting'][remove_doc]
+
+                for remove_key in ['body', 'ack']:
+                    if remove_key in doc_highlights:
+                        del doc_highlights[remove_key]
+
+        response_data['filtered'] = 'true'
+
+        return response_data
 
     @staticmethod
     def set_cookies(request):
@@ -274,7 +287,7 @@ class SolrInterface(Resource):
                 payload['timeAllowed'] = time_allowed
 
         max_hl = current_app.config.get('SOLR_SERVICE_MAX_SNIPPETS', 4)
-        max_frag = current_app.config.get('SOLR_SERVICE_MAX_FRAGSIZE', 200)
+        max_frag = current_app.config.get('SOLR_SERVICE_MAX_FRAGSIZE', 200)*2
 
         # Highlight queries need to be limited per publisher agreements,
         # so inject the limit terms if they don't exist.
