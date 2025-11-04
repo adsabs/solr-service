@@ -131,6 +131,9 @@ class SolrInterface(Resource):
             if 'hl' in query:
                 should_postprocess_response = True
 
+                if 'hl.q' not in query:
+                    query['hl.q'] = query['q']
+
             if unhighlightable_publishers and 'hl' in query:
                 if 'publisher' not in query['fl']:
                     query['fl'] = query['fl'] + ',publisher'
