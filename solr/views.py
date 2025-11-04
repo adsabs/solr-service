@@ -196,7 +196,7 @@ class SolrInterface(Resource):
         return response_data
 
     def apply_highlight_window(self, highlight_text: str, max_len: int) -> List[str]:
-        highlight_pattern = re.compile(r'<em>.*</em>', re.IGNORECASE)
+        highlight_pattern = re.compile(r'<em>[^>]*</em>', re.IGNORECASE)
         windowed_snippets = []
 
         for match in re.finditer(highlight_pattern, highlight_text):
