@@ -8,7 +8,7 @@ from flask_restful import Resource
 from flask_discoverer import advertise
 try:
     from flask_login import current_user
-except:
+except ImportError:
     # If solr service is not shipped with adsws, this will fail and it is ok
     pass
 import json
@@ -80,9 +80,10 @@ class SolrInterface(Resource):
             if 'fl' not in query:
                 query['fl'] = ",".join(default_fields)
 
-            if unhighlightable_publishers and 'hl' in query:
-                if 'publisher' not in query['fl']:
-                    query['fl'] = query['fl'] + ',publisher'
+            if 'hl' in query:
+                if unhighlightable_publishers:
+                    if 'publisher' not in query['fl']:
+                        query['fl'] = query['fl'] + ',publisher'
                 should_postprocess_response = True
 
         boost_type_map = current_app.config.get('SOLR_SERVICE_BOOST_TYPES', dict())
@@ -151,6 +152,11 @@ class SolrInterface(Resource):
                         for remove_key in ['body', 'ack']:
                             if remove_key in doc_highlights:
                                 del doc_highlights[remove_key]
+
+                for doc_highlights in response_data['highlighting']:
+                    for field, highlights in list(doc_highlights.items()):
+                        doc_highlights[field] = [highlight for highlight in highlights
+                                                 if highlight is not None and str(highlight).strip() != ""]
 
                 response_data['filtered'] = 'true'
 
