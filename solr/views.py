@@ -11,7 +11,7 @@ from flask_restful import Resource
 from flask_discoverer import advertise
 try:
     from flask_login import current_user
-except:
+except ImportError:
     # If solr service is not shipped with adsws, this will fail and it is ok
     pass
 import json
@@ -193,6 +193,11 @@ class SolrInterface(Resource):
                 ]
 
             response_data['highlighting'][doc_id] = new_highlights
+        
+        for doc_highlights in response_data['highlighting']:
+            for field, highlights in list(doc_highlights.items()):
+                doc_highlights[field] = [highlight for highlight in highlights
+                                         if highlight is not None and str(highlight).strip() != ""]
 
         response_data['filtered'] = 'true'
 
