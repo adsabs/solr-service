@@ -194,7 +194,7 @@ class SolrInterface(Resource):
 
             response_data['highlighting'][doc_id] = new_highlights
         
-        for doc_highlights in response_data['highlighting']:
+        for _, doc_highlights in response_data['highlighting'].items():
             for field, highlights in list(doc_highlights.items()):
                 doc_highlights[field] = [highlight for highlight in highlights
                                          if highlight is not None and str(highlight).strip() != ""]
