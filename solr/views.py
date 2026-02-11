@@ -693,7 +693,7 @@ class BigQuery(SolrInterface):
                 current_user_id = current_user.get_id()
             except:
                 # If solr service is not shipped with adsws, this will fail and it is ok
-                current_user_id = None
+                current_user_id = request.headers.get("X-api-uid", None)
             if current_user_id:
                 current_app.logger.info("Dispatching 'POST' request to endpoint '{}' for user '{}'".format(current_app.config[self.handler[handler_class]], current_user_id))
             else:
