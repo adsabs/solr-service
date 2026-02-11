@@ -76,7 +76,7 @@ class SolrInterface(Resource):
             current_user_id = current_user.get_id()
         except:
             # If solr service is not shipped with adsws, this will fail and it is ok
-            current_user_id = int(request.headers.get("X-api-uid", 0))
+            current_user_id = request.headers.get("X-api-uid", None)
 
 
         if current_user_id:
