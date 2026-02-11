@@ -626,7 +626,9 @@ class Search(SolrInterface):
     handler = {'default': 'SOLR_SERVICE_SEARCH_HANDLER',
                'default_embedded_bigquery': 'SOLR_SERVICE_BIGQUERY_HANDLER',
                'bot': 'BOT_SOLR_SERVICE_SEARCH_HANDLER',
-               'bot_embedded_bigquery': 'BOT_SOLR_SERVICE_BIGQUERY_HANDLER'}
+               'bot_embedded_bigquery': 'BOT_SOLR_SERVICE_BIGQUERY_HANDLER',
+               'anonymous': 'ANONYMOUS_SOLR_SERVICE_SEARCH_HANDLER',
+               'anonymous_embedded_bigquery': 'ANONYMOUS_SOLR_SERVICE_BIGQUERY_HANDLER'}
 
     def get_handler_class(self):
         """Identify bot requests based on their authentication token"""
@@ -638,7 +640,7 @@ class Search(SolrInterface):
         if request_token in current_app.config.get('BOT_TOKENS', []):
             return "bot"
         elif request.headers.get("X-api-uid") == 1:
-            return "bot"
+            return "anonymous"
         else:
             return "default"
 
@@ -658,7 +660,9 @@ class BigQuery(SolrInterface):
     handler = {'default': 'SOLR_SERVICE_BIGQUERY_HANDLER',
                'default_embedded_bigquery': 'SOLR_SERVICE_BIGQUERY_HANDLER',
                'bot': 'BOT_SOLR_SERVICE_BIGQUERY_HANDLER',
-               'bot_embedded_bigquery': 'BOT_SOLR_SERVICE_BIGQUERY_HANDLER'}
+               'bot_embedded_bigquery': 'BOT_SOLR_SERVICE_BIGQUERY_HANDLER',
+               'anonymous': 'ANONYMOUS_SOLR_SERVICE_SEARCH_HANDLER',
+               'anonymous_embedded_bigquery': 'ANONYMOUS_SOLR_SERVICE_BIGQUERY_HANDLER'}
 
     def get_handler_class(self):
         """Identify bot requests based on their authentication token"""
@@ -669,6 +673,8 @@ class BigQuery(SolrInterface):
             request_token = request.headers.get('Authorization', [])[7:]
         if request_token in current_app.config.get('BOT_TOKENS', []):
             return "bot"
+        elif request.headers.get("X-api-uid") == 1:
+            return "anonymous"
         else:
             return "default"
 
