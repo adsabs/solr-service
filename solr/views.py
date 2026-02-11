@@ -639,7 +639,7 @@ class Search(SolrInterface):
             request_token = request.headers.get('Authorization', [])[7:]
         if request_token in current_app.config.get('BOT_TOKENS', []):
             return "bot"
-        elif request.headers.get("X-api-uid") == 1:
+        elif int(request.headers.get("X-api-uid")) == 1:
             return "anonymous"
         else:
             return "default"
