@@ -76,13 +76,10 @@ class SolrInterface(Resource):
             current_user_id = current_user.get_id()
         except:
             # If solr service is not shipped with adsws, this will fail and it is ok
-            current_user_id = None
+            current_user_id = request.headers.get("X-api-uid", None)
 
+        current_app.logger.info("Dispatching 'POST' request to endpoint '{}' for user '{}'".format(current_app.config[self.handler[handler_class]], current_user_id or "anonymous"))
 
-        if current_user_id:
-            current_app.logger.info("Dispatching 'POST' request to endpoint '{}' for user '{}'".format(current_app.config[handler], current_user_id))
-        else:
-            current_app.logger.info("Dispatching 'POST' request to endpoint '{}'".format(current_app.config[handler]))
         if files and len(files): # must be directed to /bigquery
             r = requests.post(
                 current_app.config[handler],
@@ -626,7 +623,9 @@ class Search(SolrInterface):
     handler = {'default': 'SOLR_SERVICE_SEARCH_HANDLER',
                'default_embedded_bigquery': 'SOLR_SERVICE_BIGQUERY_HANDLER',
                'bot': 'BOT_SOLR_SERVICE_SEARCH_HANDLER',
-               'bot_embedded_bigquery': 'BOT_SOLR_SERVICE_BIGQUERY_HANDLER'}
+               'bot_embedded_bigquery': 'BOT_SOLR_SERVICE_BIGQUERY_HANDLER',
+               'anonymous': 'ANONYMOUS_SOLR_SERVICE_SEARCH_HANDLER',
+               'anonymous_embedded_bigquery': 'ANONYMOUS_SOLR_SERVICE_BIGQUERY_HANDLER'}
 
     def get_handler_class(self):
         """Identify bot requests based on their authentication token"""
@@ -637,6 +636,8 @@ class Search(SolrInterface):
             request_token = request.headers.get('Authorization', [])[7:]
         if request_token in current_app.config.get('BOT_TOKENS', []):
             return "bot"
+        elif int(request.headers.get("X-api-uid", 0)) == 1:
+            return "anonymous"
         else:
             return "default"
 
@@ -656,7 +657,9 @@ class BigQuery(SolrInterface):
     handler = {'default': 'SOLR_SERVICE_BIGQUERY_HANDLER',
                'default_embedded_bigquery': 'SOLR_SERVICE_BIGQUERY_HANDLER',
                'bot': 'BOT_SOLR_SERVICE_BIGQUERY_HANDLER',
-               'bot_embedded_bigquery': 'BOT_SOLR_SERVICE_BIGQUERY_HANDLER'}
+               'bot_embedded_bigquery': 'BOT_SOLR_SERVICE_BIGQUERY_HANDLER',
+               'anonymous': 'ANONYMOUS_SOLR_SERVICE_SEARCH_HANDLER',
+               'anonymous_embedded_bigquery': 'ANONYMOUS_SOLR_SERVICE_BIGQUERY_HANDLER'}
 
     def get_handler_class(self):
         """Identify bot requests based on their authentication token"""
@@ -667,6 +670,8 @@ class BigQuery(SolrInterface):
             request_token = request.headers.get('Authorization', [])[7:]
         if request_token in current_app.config.get('BOT_TOKENS', []):
             return "bot"
+        elif int(request.headers.get("X-api-uid", 0)) == 1:
+            return "anonymous"
         else:
             return "default"
 
@@ -685,11 +690,8 @@ class BigQuery(SolrInterface):
                 current_user_id = current_user.get_id()
             except:
                 # If solr service is not shipped with adsws, this will fail and it is ok
-                current_user_id = None
-            if current_user_id:
-                current_app.logger.info("Dispatching 'POST' request to endpoint '{}' for user '{}'".format(current_app.config[self.handler[handler_class]], current_user_id))
-            else:
-                current_app.logger.info("Dispatching 'POST' request to endpoint '{}'".format(current_app.config[self.handler[handler_class]]))
+                current_user_id = request.headers.get("X-api-uid", None)
+            current_app.logger.info("Dispatching 'POST' request to endpoint '{}' for user '{}'".format(current_app.config[self.handler[handler_class]], current_user_id or "anonymous"))
             r = requests.post(
                 current_app.config[self.handler[handler_class]],
                 params=query,

@@ -73,7 +73,7 @@ class TestSolrInterface(TestCase):
         payload = {'hl.snippets': 1000000, 'hl.fragsize': 1000000}
         cleaned, headers = si.cleanup_solr_request(payload)
         self.assertEqual(cleaned['hl.snippets'], self.app.config.get('SOLR_SERVICE_MAX_SNIPPETS', 4))
-        self.assertEqual(cleaned['hl.fragsize'], self.app.config.get('SOLR_SERVICE_MAX_FRAGSIZE', 200))
+        self.assertEqual(cleaned['hl.fragsize'], self.app.config.get('SOLR_SERVICE_MAX_FRAGSIZE', 800))
 
         payload = {'hl.snippets': [2, 1000000], 'hl.fragsize': [3, 1000000]}
         cleaned, headers = si.cleanup_solr_request(payload)
