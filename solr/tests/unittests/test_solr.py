@@ -349,6 +349,24 @@ class TestWebservices(TestCase):
                 '(author:"accomazzi kurtz" OR author("accomazzi" "kurtz")) year:2020'
             )
 
+            r = self.client.get(
+                url_for('search'),
+                query_string={'q': 'Blanco Cuaresma et al 2020'},
+            )
+            self.assertEqual(
+                r.json['responseHeader']['params']['q'][0],
+                '((first_author:"blanco cuaresma" author_count:[2 TO 10000]) OR (first_author:"blanco" author:"cuaresma" author_count:[3 TO 10000])) year:2020'
+            )
+
+            r = self.client.get(
+                url_for('search'),
+                query_string={'q': 'Blanco Cuaresma & Lockhart 2020'},
+            )
+            self.assertEqual(
+                r.json['responseHeader']['params']['q'][0],
+                '((first_author:"blanco" author:("cuaresma" "lockhart")) OR (first_author:"blanco cuaresma" author:"lockhart")) year:2020'
+            )
+
     def test_disable_rewrite_citation_style_queries(self):
         self.app.config['SOLR_SERVICE_ENABLE_CITATION_STYLE_REWRITE'] = False
         with MockSolrResponse(self.app.config.get('SOLR_SERVICE_SEARCH_HANDLER')):

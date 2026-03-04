@@ -32,6 +32,19 @@ def rewrite_unfielded_ads_query(query):
         a1 = _canon(m.group(1))
         return 'first_author:"{0}" author_count:[2 TO 10000] year:{1}'.format(a1, year)
 
+    # case: Lastname1 Lastname2 et al
+    m = re.match(
+        r'^([A-Za-z][A-Za-z\'\-]+)\s+([A-Za-z][A-Za-z\'\-]+)\s+et\s+al$',
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    if m:
+        a1 = _canon(m.group(1))
+        a2 = _canon(m.group(2))
+        return '((first_author:"{0} {1}" author_count:[2 TO 10000]) OR (first_author:"{0}" author:"{1}" author_count:[3 TO 10000])) year:{2}'.format(
+            a1, a2, year
+        )
+
     # case: Lastname1 & Lastname2
     m = re.match(
         r'^([A-Za-z][A-Za-z\'\-]+)\s*&\s*([A-Za-z][A-Za-z\'\-]+)$',
@@ -53,7 +66,9 @@ def rewrite_unfielded_ads_query(query):
         a1 = _canon(m.group(1))
         a2 = _canon(m.group(2))
         a3 = _canon(m.group(3))
-        return 'first_author:"{0}" author:("{1}" "{2}") year:{3}'.format(a1, a2, a3, year)
+        return '((first_author:"{0}" author:("{1}" "{2}")) OR (first_author:"{0} {1}" author:"{2}")) year:{3}'.format(
+            a1, a2, a3, year
+        )
 
     tokens = normalized.split()
     if len(tokens) == 1:
