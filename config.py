@@ -22,6 +22,7 @@ SOLR_SERVICE_ALLOWED_SORT_FIELDS = ['id asc', 'author_count asc', 'bibcode asc',
 SOLR_SERVICE_BOOST_TYPES = {'astrophysics': 'astronomy_final_boost', 'physics': 'physics_final_boost', 'earthscience': 'earth_science_final_boost', 'planetary': 'planetary_science_final_boost', 'heliophysics': 'heliophysics_final_boost', 'general': 'general_final_boost'}
 SOLR_SERVICE_MAX_ROWS = 2000
 SOLR_SERVICE_DEFAULT_ROWS = 10
+SOLR_SERVICE_ENABLE_CITATION_STYLE_REWRITE = True
 SOLR_INJECT_QUERY_PARAMS = dict()
 SQLALCHEMY_TRACK_MODIFICATIONS = False
 SQLALCHEMY_DATABASE_URI = "sqlite:///"

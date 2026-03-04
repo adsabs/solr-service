@@ -16,6 +16,7 @@ except ImportError:
     pass
 import json
 from .models import Limits
+from .query_rewrite import rewrite_unfielded_ads_query
 from sqlalchemy import or_
 from werkzeug.datastructures import MultiDict
 from io import StringIO
@@ -119,6 +120,17 @@ class SolrInterface(Resource):
 
         unhighlightable_publishers = current_app.config.get('SOLR_SERVICE_DISALLOWED_HIGHLIGHTS_PUBLISHERS', [])
         default_fields = current_app.config.get('SOLR_SERVICE_DEFAULT_FIELDS', [])
+
+        if handler == 'SOLR_SERVICE_SEARCH_HANDLER' and current_app.config.get('SOLR_SERVICE_ENABLE_CITATION_STYLE_REWRITE', True):
+            q = query.get('q')
+            if isinstance(q, list) and len(q) > 0 and isinstance(q[0], str):
+                rewritten = rewrite_unfielded_ads_query(q[0])
+                if rewritten:
+                    query['q'] = [rewritten]
+            elif isinstance(q, str):
+                rewritten = rewrite_unfielded_ads_query(q)
+                if rewritten:
+                    query['q'] = rewritten
 
         if default_fields and handler == 'SOLR_SERVICE_SEARCH_HANDLER':
             if 'fl' not in query:
@@ -725,4 +737,3 @@ class ClosingTuple(tuple):
         for x in self:
             if hasattr(x, 'close'):
                 x.close()
-
