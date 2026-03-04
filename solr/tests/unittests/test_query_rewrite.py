@@ -11,6 +11,12 @@ class TestQueryRewrite(unittest.TestCase):
             '(first_author:"kurtz" OR author:"kurtz") year:2000'
         )
 
+    def test_lastname_year_non_ascii(self):
+        self.assertEqual(
+            rewrite_unfielded_ads_query('Nuñoz 2020'),
+            '(first_author:"nuñoz" OR author:"nuñoz") year:2020'
+        )
+
     def test_lastname_year_suffix(self):
         self.assertEqual(
             rewrite_unfielded_ads_query('Kurtz 2000a'),
@@ -21,6 +27,12 @@ class TestQueryRewrite(unittest.TestCase):
         self.assertEqual(
             rewrite_unfielded_ads_query('Kurtz & Mink 2000b'),
             'first_author:"kurtz" author:"mink" year:2000'
+        )
+
+    def test_lastname_amp_lastname_year_non_ascii(self):
+        self.assertEqual(
+            rewrite_unfielded_ads_query('Nuñoz & García 2020'),
+            'first_author:"nuñoz" author:"garcía" year:2020'
         )
 
     def test_three_authors_with_amp(self):

@@ -1,5 +1,7 @@
 import re
 
+NAME_PATTERN = r"[^\W\d_][^\W\d_'-]*(?:['-][^\W\d_]+)*"
+
 
 def rewrite_unfielded_ads_query(query):
     """
@@ -27,14 +29,14 @@ def rewrite_unfielded_ads_query(query):
         return None
 
     # case: Lastname et al
-    m = re.match(r'^([A-Za-z][A-Za-z\'\-]+)\s+et\s+al$', normalized, flags=re.IGNORECASE)
+    m = re.match(r'^({n})\s+et\s+al$'.format(n=NAME_PATTERN), normalized, flags=re.IGNORECASE)
     if m:
         a1 = _canon(m.group(1))
         return 'first_author:"{0}" author_count:[2 TO 10000] year:{1}'.format(a1, year)
 
     # case: Lastname1 Lastname2 et al
     m = re.match(
-        r'^([A-Za-z][A-Za-z\'\-]+)\s+([A-Za-z][A-Za-z\'\-]+)\s+et\s+al$',
+        r'^({n})\s+({n})\s+et\s+al$'.format(n=NAME_PATTERN),
         normalized,
         flags=re.IGNORECASE,
     )
@@ -47,7 +49,7 @@ def rewrite_unfielded_ads_query(query):
 
     # case: Lastname1 & Lastname2
     m = re.match(
-        r'^([A-Za-z][A-Za-z\'\-]+)\s*&\s*([A-Za-z][A-Za-z\'\-]+)$',
+        r'^({n})\s*&\s*({n})$'.format(n=NAME_PATTERN),
         normalized,
         flags=re.IGNORECASE,
     )
@@ -58,7 +60,7 @@ def rewrite_unfielded_ads_query(query):
 
     # case: Lastname1 [,] Lastname2 & Lastname3
     m = re.match(
-        r'^([A-Za-z][A-Za-z\'\-]+)\s*,?\s*([A-Za-z][A-Za-z\'\-]+)\s*&\s*([A-Za-z][A-Za-z\'\-]+)$',
+        r'^({n})\s*,?\s*({n})\s*&\s*({n})$'.format(n=NAME_PATTERN),
         normalized,
         flags=re.IGNORECASE,
     )
