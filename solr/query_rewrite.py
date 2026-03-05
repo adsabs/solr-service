@@ -1,0 +1,151 @@
+import re
+
+NAME_PATTERN = r"[^\W\d_][^\W\d_'-]*(?:['-][^\W\d_]+)*"
+FIELD_RE = re.compile(r'\b[A-Za-z_][A-Za-z0-9_.-]*\s*:')
+YEAR_RE = re.compile(r'\b(?:19|20)\d{2}[a-z]?\b', re.IGNORECASE)
+ENDS_WITH_YEAR_PAREN_RE = re.compile(r'\(\s*(?:19|20)\d{2}\s*\)\s*[.,]?\s*$')
+
+
+def rewrite_unfielded_ads_query(query):
+    """
+    Rewrites simple citation-like free-text queries into fielded queries.
+    Returns rewritten query string or None when no supported pattern matches.
+    """
+    if not isinstance(query, str):
+        return None
+
+    raw = query.strip()
+    if not raw:
+        return None
+
+    # Avoid rewriting explicit Solr syntax or advanced user queries.
+    if _looks_fielded_or_advanced(raw):
+        return None
+
+    parsed = _extract_year(raw)
+    if not parsed:
+        return None
+    body, year = parsed
+
+    normalized = _normalize_body(body)
+    if not normalized:
+        return None
+
+    # case: Lastname et al
+    m = re.match(r'^({n})\s+et\s+al$'.format(n=NAME_PATTERN), normalized, flags=re.IGNORECASE)
+    if m:
+        a1 = _canon(m.group(1))
+        return 'first_author:"{0}" author_count:[2 TO 10000] year:{1}'.format(a1, year)
+
+    # case: Lastname1 Lastname2 et al
+    m = re.match(
+        r'^({n})\s+({n})\s+et\s+al$'.format(n=NAME_PATTERN),
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    if m:
+        a1 = _canon(m.group(1))
+        a2 = _canon(m.group(2))
+        return '((first_author:"{0} {1}" author_count:[2 TO 10000]) OR (first_author:"{0}" author:"{1}" author_count:[3 TO 10000])) year:{2}'.format(
+            a1, a2, year
+        )
+
+    # case: Lastname1 & Lastname2
+    m = re.match(
+        r'^({n})\s*&\s*({n})$'.format(n=NAME_PATTERN),
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    if m:
+        a1 = _canon(m.group(1))
+        a2 = _canon(m.group(2))
+        return 'first_author:"{0}" author:"{1}" year:{2}'.format(a1, a2, year)
+
+    # case: Lastname1 [,] Lastname2 & Lastname3
+    m = re.match(
+        r'^({n})\s*,?\s*({n})\s*&\s*({n})$'.format(n=NAME_PATTERN),
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    if m:
+        a1 = _canon(m.group(1))
+        a2 = _canon(m.group(2))
+        a3 = _canon(m.group(3))
+        return '((first_author:"{0}" author:("{1}" "{2}")) OR (first_author:"{0} {1}" author:"{2}")) year:{3}'.format(
+            a1, a2, a3, year
+        )
+
+    tokens = normalized.split()
+    if len(tokens) == 1:
+        a = _canon(tokens[0])
+        return '(first_author:"{0}" OR author:"{0}") year:{1}'.format(a, year)
+
+    if len(tokens) == 2:
+        a1 = _canon(tokens[0])
+        a2 = _canon(tokens[1])
+        return '(author:"{a1} {a2}" OR author("{a1}" "{a2}")) year:{year}'.format(
+            a1=a1, a2=a2, year=year
+        )
+
+    return None
+
+
+def _looks_fielded_or_advanced(query):
+    # fielded terms and/or common advanced query syntax; keep conservative.
+    if FIELD_RE.search(query):
+        return True
+    if any(ch in query for ch in ['(', ')', '"', '[', ']', '*', '?', '^', '~']):
+        return True
+    if re.search(r'\b(AND|OR|NOT)\b', query, flags=re.IGNORECASE):
+        return True
+    return False
+
+
+def is_likely_bibliographic_reference(query):
+    """
+    Heuristic for full reference strings (author + venue details + year), not
+    short inline citation styles handled by rewrite_unfielded_ads_query.
+    """
+    if not isinstance(query, str):
+        return False
+    raw = query.strip()
+    if not raw:
+        return False
+    if FIELD_RE.search(raw):
+        return False
+
+    if ENDS_WITH_YEAR_PAREN_RE.search(raw):
+        return True
+
+    if not YEAR_RE.search(raw):
+        return False
+
+    # Require common reference punctuation/shape to avoid generic keyword queries.
+    has_ref_punct = any(tok in raw for tok in [',', ';', ':', '(', ')'])
+    if has_ref_punct and len(raw.split()) >= 5:
+        return True
+
+    return False
+
+
+def _extract_year(query):
+    m = re.search(r'\b((?:19|20)\d{2})([A-Za-z]?)\s*$', query)
+    if not m:
+        return None
+    year = m.group(1)
+    body = query[:m.start()].strip()
+    if not body:
+        return None
+    return body, year
+
+
+def _normalize_body(body):
+    # replace en-dash and em-dash with a hyphen
+    body = body.replace(u'\u2013', '-').replace(u'\u2014', '-')
+    # replace all whitespace with a regular space
+    body = re.sub(r'\s+', ' ', body)
+    return body.strip(' \t\r\n,.;:')
+
+
+def _canon(token):
+    return token.lower().strip(" \t\r\n,.;:()[]{}'\"")

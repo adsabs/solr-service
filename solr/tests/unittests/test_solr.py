@@ -311,6 +311,100 @@ class TestWebservices(TestCase):
             )
             self.assertEqual(r.json['responseHeader']['params']['hl.fragsize'], ['50'])
 
+    def test_rewrite_citation_style_queries(self):
+        with MockSolrResponse(self.app.config.get('SOLR_SERVICE_SEARCH_HANDLER')):
+            r = self.client.get(
+                url_for('search'),
+                query_string={'q': 'Kurtz 2000'},
+            )
+            self.assertEqual(
+                r.json['responseHeader']['params']['q'][0],
+                '(first_author:"kurtz" OR author:"kurtz") year:2000'
+            )
+
+            r = self.client.get(
+                url_for('search'),
+                query_string={'q': 'Kurtz et al 2000'},
+            )
+            self.assertEqual(
+                r.json['responseHeader']['params']['q'][0],
+                'first_author:"kurtz" author_count:[2 TO 10000] year:2000'
+            )
+
+            r = self.client.get(
+                url_for('search'),
+                query_string={'q': 'stephanie jarmak 2020'},
+            )
+            self.assertEqual(
+                r.json['responseHeader']['params']['q'][0],
+                '(author:"stephanie jarmak" OR author("stephanie" "jarmak")) year:2020'
+            )
+
+            r = self.client.get(
+                url_for('search'),
+                query_string={'q': 'Accomazzi Kurtz 2020'},
+            )
+            self.assertEqual(
+                r.json['responseHeader']['params']['q'][0],
+                '(author:"accomazzi kurtz" OR author("accomazzi" "kurtz")) year:2020'
+            )
+
+            r = self.client.get(
+                url_for('search'),
+                query_string={'q': 'Blanco Cuaresma et al 2020'},
+            )
+            self.assertEqual(
+                r.json['responseHeader']['params']['q'][0],
+                '((first_author:"blanco cuaresma" author_count:[2 TO 10000]) OR (first_author:"blanco" author:"cuaresma" author_count:[3 TO 10000])) year:2020'
+            )
+
+            r = self.client.get(
+                url_for('search'),
+                query_string={'q': 'Blanco Cuaresma & Lockhart 2020'},
+            )
+            self.assertEqual(
+                r.json['responseHeader']['params']['q'][0],
+                '((first_author:"blanco" author:("cuaresma" "lockhart")) OR (first_author:"blanco cuaresma" author:"lockhart")) year:2020'
+            )
+
+    def test_disable_rewrite_citation_style_queries(self):
+        self.app.config['SOLR_SERVICE_ENABLE_CITATION_STYLE_REWRITE'] = False
+        with MockSolrResponse(self.app.config.get('SOLR_SERVICE_SEARCH_HANDLER')):
+            r = self.client.get(
+                url_for('search'),
+                query_string={'q': 'Kurtz 2000'},
+            )
+            self.assertEqual(r.json['responseHeader']['params']['q'][0], 'Kurtz 2000')
+
+    def test_reference_resolution_rewrites_to_bibcode_query(self):
+        with MockSolrResponse(self.app.config.get('SOLR_SERVICE_SEARCH_HANDLER')):
+            with mock.patch.object(
+                SolrInterface,
+                '_resolve_reference_to_bibcode',
+                return_value='1977PhRvC..16..427G',
+            ):
+                r = self.client.get(
+                    url_for('search'),
+                    query_string={'q': 'J. B. Gupta, K. Kumar, and J. H. Hamilton, Phys. Rev. C 16, 427 (1977)'},
+                )
+                self.assertEqual(
+                    r.json['responseHeader']['params']['q'][0],
+                    'bibcode:1977PhRvC..16..427G'
+                )
+
+    def test_reference_resolution_no_match_falls_back_to_original_query(self):
+        with MockSolrResponse(self.app.config.get('SOLR_SERVICE_SEARCH_HANDLER')):
+            with mock.patch.object(
+                SolrInterface,
+                '_resolve_reference_to_bibcode',
+                return_value=None,
+            ):
+                q = 'J. B. Gupta, K. Kumar, and J. H. Hamilton, Phys. Rev. C 16, 427 (1977)'
+                r = self.client.get(
+                    url_for('search'),
+                    query_string={'q': q},
+                )
+                self.assertEqual(r.json['responseHeader']['params']['q'][0], q)
 
     def test_set_max_rows(self):
         """
