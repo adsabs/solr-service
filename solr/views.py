@@ -16,7 +16,7 @@ except ImportError:
     pass
 import json
 from .models import Limits
-from .query_rewrite import rewrite_unfielded_ads_query
+from .query_rewrite import rewrite_unfielded_ads_query, is_likely_bibliographic_reference
 from sqlalchemy import or_
 from werkzeug.datastructures import MultiDict
 from io import StringIO
@@ -123,14 +123,25 @@ class SolrInterface(Resource):
 
         if handler == 'SOLR_SERVICE_SEARCH_HANDLER' and current_app.config.get('SOLR_SERVICE_ENABLE_CITATION_STYLE_REWRITE', True):
             q = query.get('q')
-            if isinstance(q, list) and len(q) > 0 and isinstance(q[0], str):
-                rewritten = rewrite_unfielded_ads_query(q[0])
-                if rewritten:
-                    query['q'] = [rewritten]
-            elif isinstance(q, str):
-                rewritten = rewrite_unfielded_ads_query(q)
-                if rewritten:
-                    query['q'] = rewritten
+            q_raw = q[0] if isinstance(q, list) and len(q) > 0 else q
+            citation_rewrite = None
+            if isinstance(q_raw, str):
+                citation_rewrite = rewrite_unfielded_ads_query(q_raw)
+
+            if citation_rewrite:
+                if isinstance(q, list):
+                    query['q'] = [citation_rewrite]
+                else:
+                    query['q'] = citation_rewrite
+
+            elif isinstance(q_raw, str) and current_app.config.get('SOLR_SERVICE_ENABLE_REFERENCE_RESOLUTION', True):
+                if is_likely_bibliographic_reference(q_raw):
+                    bibcode = self._resolve_reference_to_bibcode(q_raw)
+                    if bibcode:
+                        if isinstance(q, list):
+                            query['q'] = ['bibcode:{0}'.format(bibcode)]
+                        else:
+                            query['q'] = 'bibcode:{0}'.format(bibcode)
 
         if default_fields and handler == 'SOLR_SERVICE_SEARCH_HANDLER':
             if 'fl' not in query:
@@ -162,6 +173,49 @@ class SolrInterface(Resource):
                                        if boost_type in boost_type_map])
 
         return should_postprocess_response
+
+    def _reference_request_headers(self):
+        headers = {}
+        for header_key in ['Authorization', 'X-Forwarded-Authorization']:
+            if header_key in request.headers:
+                headers[header_key] = request.headers[header_key]
+        return headers
+
+    def _resolve_reference_to_bibcode(self, reference_text: str):
+        endpoint = current_app.config.get('REFERENCE_RESOLVER_ENDPOINT')
+        if not endpoint:
+            return None
+
+        payload = {'reference': [reference_text]}
+        headers = self._reference_request_headers()
+        timeout = current_app.config.get('REFERENCE_RESOLVER_TIMEOUT', 5)
+        min_score = float(current_app.config.get('REFERENCE_RESOLVER_MIN_SCORE', 0.8))
+
+        try:
+            r = current_app.client.post(endpoint, json=payload, headers=headers, timeout=timeout)
+            r.raise_for_status()
+            data = r.json()
+        except Exception:
+            return None
+
+        records = data.get('resolved') or []
+        if not isinstance(records, list) or len(records) != 1:
+            return None
+
+        record = records[0]
+        bibcode = record.get('bibcode')
+        if not bibcode:
+            return None
+
+        try:
+            score = float(record.get('score') or 0)
+        except Exception:
+            score = 0
+
+        if score < min_score:
+            return None
+
+        return bibcode
 
     def postprocess_response(self, r: requests.Response) -> dict:
         response_data = r.json()

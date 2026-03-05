@@ -376,6 +376,36 @@ class TestWebservices(TestCase):
             )
             self.assertEqual(r.json['responseHeader']['params']['q'][0], 'Kurtz 2000')
 
+    def test_reference_resolution_rewrites_to_bibcode_query(self):
+        with MockSolrResponse(self.app.config.get('SOLR_SERVICE_SEARCH_HANDLER')):
+            with mock.patch.object(
+                SolrInterface,
+                '_resolve_reference_to_bibcode',
+                return_value='1977PhRvC..16..427G',
+            ):
+                r = self.client.get(
+                    url_for('search'),
+                    query_string={'q': 'J. B. Gupta, K. Kumar, and J. H. Hamilton, Phys. Rev. C 16, 427 (1977)'},
+                )
+                self.assertEqual(
+                    r.json['responseHeader']['params']['q'][0],
+                    'bibcode:1977PhRvC..16..427G'
+                )
+
+    def test_reference_resolution_no_match_falls_back_to_original_query(self):
+        with MockSolrResponse(self.app.config.get('SOLR_SERVICE_SEARCH_HANDLER')):
+            with mock.patch.object(
+                SolrInterface,
+                '_resolve_reference_to_bibcode',
+                return_value=None,
+            ):
+                q = 'J. B. Gupta, K. Kumar, and J. H. Hamilton, Phys. Rev. C 16, 427 (1977)'
+                r = self.client.get(
+                    url_for('search'),
+                    query_string={'q': q},
+                )
+                self.assertEqual(r.json['responseHeader']['params']['q'][0], q)
+
     def test_set_max_rows(self):
         """
         solr should only return up to a default number of documents

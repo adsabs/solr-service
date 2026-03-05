@@ -1,6 +1,6 @@
 import unittest
 
-from solr.query_rewrite import rewrite_unfielded_ads_query
+from solr.query_rewrite import rewrite_unfielded_ads_query, is_likely_bibliographic_reference
 
 
 class TestQueryRewrite(unittest.TestCase):
@@ -82,3 +82,16 @@ class TestQueryRewrite(unittest.TestCase):
 
     def test_no_year_is_not_rewritten(self):
         self.assertIsNone(rewrite_unfielded_ads_query('Kurtz Mink'))
+
+    def test_reference_detection_true(self):
+        self.assertTrue(
+            is_likely_bibliographic_reference(
+                'J. B. Gupta, K. Kumar, and J. H. Hamilton, Phys. Rev. C 16, 427 (1977)'
+            )
+        )
+
+    def test_reference_detection_false_for_inline_citation(self):
+        self.assertFalse(is_likely_bibliographic_reference('Kurtz 2000'))
+
+    def test_reference_detection_false_for_keywords(self):
+        self.assertFalse(is_likely_bibliographic_reference('accomazzi 2022 ADS'))

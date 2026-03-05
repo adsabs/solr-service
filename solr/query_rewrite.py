@@ -1,6 +1,9 @@
 import re
 
 NAME_PATTERN = r"[^\W\d_][^\W\d_'-]*(?:['-][^\W\d_]+)*"
+FIELD_RE = re.compile(r'\b[A-Za-z_][A-Za-z0-9_.-]*\s*:')
+YEAR_RE = re.compile(r'\b(?:19|20)\d{2}[a-z]?\b', re.IGNORECASE)
+ENDS_WITH_YEAR_PAREN_RE = re.compile(r'\(\s*(?:19|20)\d{2}\s*\)\s*[.,]?\s*$')
 
 
 def rewrite_unfielded_ads_query(query):
@@ -89,12 +92,39 @@ def rewrite_unfielded_ads_query(query):
 
 def _looks_fielded_or_advanced(query):
     # fielded terms and/or common advanced query syntax; keep conservative.
-    if re.search(r'\b[A-Za-z_][A-Za-z0-9_.-]*\s*:', query):
+    if FIELD_RE.search(query):
         return True
     if any(ch in query for ch in ['(', ')', '"', '[', ']', '*', '?', '^', '~']):
         return True
     if re.search(r'\b(AND|OR|NOT)\b', query, flags=re.IGNORECASE):
         return True
+    return False
+
+
+def is_likely_bibliographic_reference(query):
+    """
+    Heuristic for full reference strings (author + venue details + year), not
+    short inline citation styles handled by rewrite_unfielded_ads_query.
+    """
+    if not isinstance(query, str):
+        return False
+    raw = query.strip()
+    if not raw:
+        return False
+    if FIELD_RE.search(raw):
+        return False
+
+    if ENDS_WITH_YEAR_PAREN_RE.search(raw):
+        return True
+
+    if not YEAR_RE.search(raw):
+        return False
+
+    # Require common reference punctuation/shape to avoid generic keyword queries.
+    has_ref_punct = any(tok in raw for tok in [',', ';', ':', '(', ')'])
+    if has_ref_punct and len(raw.split()) >= 5:
+        return True
+
     return False
 
 
