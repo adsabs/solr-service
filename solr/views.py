@@ -196,6 +196,11 @@ class SolrInterface(Resource):
                 doc_highlights[field] = [highlight for highlight in highlights
                                          if highlight is not None and str(highlight).strip() != ""]
 
+        if 'allocatedBytes' in response_data:
+            query = response_data.get('responseHeader', {}).get('params', {}).get('q')
+            if query:
+                current_app.logger.info(f"Query: {query}, Allocated Bytes: {response_data['allocatedBytes']}")
+
         response_data['filtered'] = 'true'
 
         return response_data
