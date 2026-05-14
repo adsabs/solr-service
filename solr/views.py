@@ -178,24 +178,25 @@ class SolrInterface(Resource):
                     if remove_key in doc_highlights:
                         del doc_highlights[remove_key]
 
-        max_frag = current_app.config.get('SOLR_SERVICE_MAX_FRAGSIZE', 200)
-        for doc_id in list(response_data['highlighting'].keys()):
-            current_highlights = response_data['highlighting'][doc_id]
-            new_highlights = dict()
+        if 'highlighting' in response_data:
+            max_frag = current_app.config.get('SOLR_SERVICE_MAX_FRAGSIZE', 200)
+            for doc_id in list(response_data['highlighting'].keys()):
+                current_highlights = response_data['highlighting'][doc_id]
+                new_highlights = dict()
 
-            for field in current_highlights.keys():
-                new_highlights[field] = [
-                    windowed_highlight
-                    for highlight in current_highlights[field]
-                    for windowed_highlight in self.apply_highlight_window(highlight, max_frag)
-                ]
+                for field in current_highlights.keys():
+                    new_highlights[field] = [
+                        windowed_highlight
+                        for highlight in current_highlights[field]
+                        for windowed_highlight in self.apply_highlight_window(highlight, max_frag)
+                    ]
 
-            response_data['highlighting'][doc_id] = new_highlights
-        
-        for _, doc_highlights in response_data['highlighting'].items():
-            for field, highlights in list(doc_highlights.items()):
-                doc_highlights[field] = [highlight for highlight in highlights
-                                         if highlight is not None and str(highlight).strip() != ""]
+                response_data['highlighting'][doc_id] = new_highlights
+
+            for _, doc_highlights in response_data['highlighting'].items():
+                for field, highlights in list(doc_highlights.items()):
+                    doc_highlights[field] = [highlight for highlight in highlights
+                                             if highlight is not None and str(highlight).strip() != ""]
 
         if 'allocatedBytes' in response_data:
             query = response_data.get('responseHeader', {}).get('params', {}).get('q')
