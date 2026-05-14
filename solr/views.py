@@ -70,7 +70,8 @@ class SolrInterface(Resource):
             handler_class += '_embedded_bigquery'
         handler = self.handler.get(handler_class, self.handler.get("default"))
 
-        should_postprocess_response = self.preprocess_request(handler, query)
+        should_postprocess_response = True
+        self.preprocess_request(handler, query)
 
         try:
             current_user_id = current_user.get_id()
