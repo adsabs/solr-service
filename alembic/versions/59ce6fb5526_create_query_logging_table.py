@@ -22,6 +22,7 @@ from sqlalchemy import String, Integer, Index
 def upgrade():
     op.create_table('query_log',
         sa.Column('id', sa.Integer, primary_key=True),
+        sa.Column('timestamp', sa.Integer, nullable=False),
         sa.Column('query', sa.Text, nullable=False),
         sa.Column('allocated_bytes', sa.Integer, nullable=False),
         sa.Column('request_duration', sa.Integer, nullable=False)

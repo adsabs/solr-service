@@ -26,3 +26,11 @@ class Limits(Base):
             'field': self.field,
             'filter': self.filter or None
         }
+
+class QueryLog(Base):
+    __tablename__ = 'query_log'
+    id = Column(Integer, primary_key=True)
+    timestamp = Column("timestamp", Integer, nullable=False)
+    query = Column("query", Text, nullable=False)
+    allocated_bytes = Column("allocated_bytes", Integer, nullable=False)
+    request_duration = Column("request_duration", Integer, nullable=False)
