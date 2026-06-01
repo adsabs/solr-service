@@ -5,7 +5,7 @@
 
     Models for the users (users) of AdsWS
 """
-from sqlalchemy import Column, Integer, String, Text
+from sqlalchemy import Column, Integer, String, Text, DateTime, Interval
 from sqlalchemy.ext.declarative import declarative_base
 
 
@@ -30,7 +30,7 @@ class Limits(Base):
 class QueryLog(Base):
     __tablename__ = 'query_log'
     id = Column(Integer, primary_key=True)
-    timestamp = Column("timestamp", Integer, nullable=False)
+    timestamp = Column("timestamp", DateTime, nullable=False)
     query = Column("query", Text, nullable=False)
     allocated_bytes = Column("allocated_bytes", Integer, nullable=False)
-    request_duration = Column("request_duration", Integer, nullable=False)
+    request_duration = Column("request_duration", Interval, nullable=False)
