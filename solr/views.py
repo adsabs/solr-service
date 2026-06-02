@@ -1,5 +1,6 @@
 from __future__ import absolute_import
 
+import datetime
 import re
 
 from future import standard_library
@@ -15,7 +16,7 @@ except ImportError:
     # If solr service is not shipped with adsws, this will fail and it is ok
     pass
 import json
-from .models import Limits
+from .models import Limits, QueryLog
 from sqlalchemy import or_
 from werkzeug.datastructures import MultiDict
 from io import StringIO
@@ -81,6 +82,7 @@ class SolrInterface(Resource):
 
         current_app.logger.info("Dispatching 'POST' request to endpoint '{}' for user '{}'".format(current_app.config[self.handler[handler_class]], current_user_id or "anonymous"))
 
+        start_time = datetime.datetime.now(datetime.timezone.utc)
         if files and len(files): # must be directed to /bigquery
             r = requests.post(
                 current_app.config[handler],
@@ -96,12 +98,13 @@ class SolrInterface(Resource):
                 headers=headers,
                 cookies=SolrInterface.set_cookies(request),
             )
+        end_time = datetime.datetime.now(datetime.timezone.utc)
         current_app.logger.info("Received response from from endpoint '{}' with status code '{}'".format(current_app.config[handler], r.status_code))
 
         # Run this if we've identified a need to alter the response from Solr
         if should_postprocess_response and r.ok:
             try:
-                response_data = self.postprocess_response(r)
+                response_data = self.postprocess_response(r, start_time, end_time)
 
                 return json.dumps(response_data), r.status_code, r.headers
             except Exception as e:
@@ -152,7 +155,7 @@ class SolrInterface(Resource):
 
         return should_postprocess_response
 
-    def postprocess_response(self, r: requests.Response) -> dict:
+    def postprocess_response(self, r: requests.Response, start_time: datetime.datetime, end_time: datetime.datetime) -> dict:
         response_data = r.json()
         unhighlightable_publishers = current_app.config.get('SOLR_SERVICE_DISALLOWED_HIGHLIGHTS_PUBLISHERS', [])
         unhighlightable_docs = []
@@ -202,6 +205,14 @@ class SolrInterface(Resource):
             query = response_data.get('responseHeader', {}).get('params', {}).get('q')
             if query:
                 current_app.logger.info(f"Query: {query}, Allocated Bytes: {response_data['allocatedBytes']}")
+                with current_app.session_scope() as session:
+                    session.add(QueryLog(
+                        timestamp=start_time,
+                        query=query,
+                        allocated_bytes=response_data['allocatedBytes'],
+                        request_duration=end_time - start_time
+                    ))
+                    session.commit()
 
         response_data['filtered'] = 'true'
 
