@@ -17,7 +17,6 @@ from . import middleware
 from . import bigquery
 from . import transport
 from . import handlers
-from . import preprocess as _preprocess
 from . import postprocess as _postprocess
 from .postprocess import apply_highlight_window as _apply_highlight_window
 from .transport import parse_host as _parse_host
@@ -51,6 +50,16 @@ class SolrInterface(Resource):
     def get_handler_class(self):
         return "default"
 
+    @staticmethod
+    def _current_user_id():
+        """Best-effort user id for logging: flask_login when shipped with adsws,
+        otherwise the X-api-uid header."""
+        try:
+            return current_user.get_id()
+        except:
+            # If solr service is not shipped with adsws, this will fail and it is ok
+            return request.headers.get("X-api-uid", None)
+
     def get(self):
         query, headers = self.cleanup_solr_request(request.args.to_dict(flat=False))
 
@@ -77,12 +86,7 @@ class SolrInterface(Resource):
         )
         middleware.run_preprocess(ctx)
 
-        try:
-            current_user_id = current_user.get_id()
-        except:
-            # If solr service is not shipped with adsws, this will fail and it is ok
-            current_user_id = request.headers.get("X-api-uid", None)
-
+        current_user_id = self._current_user_id()
         current_app.logger.info("Dispatching 'POST' request to endpoint '{}' for user '{}'".format(current_app.config[self.handler[handler_class]], current_user_id or "anonymous"))
 
         if files and len(files): # must be directed to /bigquery
@@ -105,9 +109,6 @@ class SolrInterface(Resource):
         ctx.response = r
         return middleware.run_postprocess(ctx)
 
-    def preprocess_request(self, handler: str, query) -> bool:
-        return _preprocess.preprocess_request(handler, query, current_app.config)
-
     def postprocess_response(self, r: requests.Response) -> dict:
         return _postprocess.postprocess_response(r.json(), current_app.config)
 
@@ -124,9 +125,6 @@ class SolrInterface(Resource):
         :rtype dict or None
         """
         return transport.select_cookies(request, current_app.config)
-
-    def apply_protective_filters(self, payload, user_id, protected_fields, key):
-        return sanitize.apply_protective_filters(payload, user_id, protected_fields, key)
 
     def cleanup_solr_request(self, payload, user_id=None, handler_class="default"):
         """
@@ -146,10 +144,6 @@ class SolrInterface(Resource):
             user_id=user_id,
         )
 
-
-    def get_host(self, url):
-        """Just extracts the host from the url."""
-        return self._host or self._get_host(url)
 
     def _get_host(self, url):
         self._host = _parse_host(url)
@@ -228,11 +222,7 @@ class BigQuery(SolrInterface):
         files = self.check_for_embedded_bigquery(query, request, headers, handler_class=handler_class)
 
         if files and len(files) > 0:
-            try:
-                current_user_id = current_user.get_id()
-            except:
-                # If solr service is not shipped with adsws, this will fail and it is ok
-                current_user_id = request.headers.get("X-api-uid", None)
+            current_user_id = self._current_user_id()
             current_app.logger.info("Dispatching 'POST' request to endpoint '{}' for user '{}'".format(current_app.config[self.handler[handler_class]], current_user_id or "anonymous"))
             r = requests.post(
                 current_app.config[self.handler[handler_class]],
