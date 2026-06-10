@@ -1,11 +1,8 @@
 from __future__ import absolute_import
 
-import re
-
 from future import standard_library
 standard_library.install_aliases()
 from builtins import str
-from past.builtins import basestring
 from flask import current_app, request
 from flask_restful import Resource
 from flask_discoverer import advertise
@@ -15,12 +12,15 @@ except ImportError:
     # If solr service is not shipped with adsws, this will fail and it is ok
     pass
 import json
-from .models import Limits
-from sqlalchemy import or_
-from werkzeug.datastructures import MultiDict
-from io import StringIO
-from io import BytesIO
-from urllib.parse import parse_qs
+from . import sanitize
+from . import middleware
+from . import bigquery
+from . import transport
+from . import handlers
+from . import postprocess as _postprocess
+from .postprocess import apply_highlight_window as _apply_highlight_window
+from .transport import parse_host as _parse_host
+from .bigquery import extract_docs_values as _extract_docs_values
 from typing import List
 
 import requests # Do not use current_app.client but requests, to avoid re-using
@@ -50,6 +50,16 @@ class SolrInterface(Resource):
     def get_handler_class(self):
         return "default"
 
+    @staticmethod
+    def _current_user_id():
+        """Best-effort user id for logging: flask_login when shipped with adsws,
+        otherwise the X-api-uid header."""
+        try:
+            return current_user.get_id()
+        except:
+            # If solr service is not shipped with adsws, this will fail and it is ok
+            return request.headers.get("X-api-uid", None)
+
     def get(self):
         query, headers = self.cleanup_solr_request(request.args.to_dict(flat=False))
 
@@ -68,16 +78,15 @@ class SolrInterface(Resource):
         files = self.check_for_embedded_bigquery(query, request, headers, handler_class=handler_class)
         if files and len(files): # must be directed to /bigquery
             handler_class += '_embedded_bigquery'
-        handler = self.handler.get(handler_class, self.handler.get("default"))
+        handler = handlers.resolve_handler_key(self.handler, handler_class)
 
-        should_postprocess_response = self.preprocess_request(handler, query)
+        ctx = middleware.Context(
+            query, headers, request, current_app.config,
+            handler_class=handler_class, handler_key=handler, files=files,
+        )
+        middleware.run_preprocess(ctx)
 
-        try:
-            current_user_id = current_user.get_id()
-        except:
-            # If solr service is not shipped with adsws, this will fail and it is ok
-            current_user_id = request.headers.get("X-api-uid", None)
-
+        current_user_id = self._current_user_id()
         current_app.logger.info("Dispatching 'POST' request to endpoint '{}' for user '{}'".format(current_app.config[self.handler[handler_class]], current_user_id or "anonymous"))
 
         if files and len(files): # must be directed to /bigquery
@@ -97,156 +106,14 @@ class SolrInterface(Resource):
             )
         current_app.logger.info("Received response from from endpoint '{}' with status code '{}'".format(current_app.config[handler], r.status_code))
 
-        # Run this if we've identified a need to alter the response from Solr
-        if should_postprocess_response and r.ok:
-            try:
-                response_data = self.postprocess_response(r)
-
-                return json.dumps(response_data), r.status_code, r.headers
-            except Exception as e:
-                current_app.logger.error(e.with_traceback())
-
-        return r.text, r.status_code, r.headers
-
-    def preprocess_request(self, handler: str, query) -> bool:
-        should_postprocess_response = False
-
-        if current_app.config.get("SOLR_INJECT_QUERY_PARAMS", {}):
-            injected_params = current_app.config.get("SOLR_INJECT_QUERY_PARAMS", {})
-            for injected_param, value in injected_params.items():
-                if injected_param not in query.keys():
-                    query[injected_param] = value
-
-        unhighlightable_publishers = current_app.config.get('SOLR_SERVICE_DISALLOWED_HIGHLIGHTS_PUBLISHERS', [])
-        default_fields = current_app.config.get('SOLR_SERVICE_DEFAULT_FIELDS', [])
-
-        if default_fields and handler == 'SOLR_SERVICE_SEARCH_HANDLER':
-            if 'fl' not in query:
-                query['fl'] = ",".join(default_fields)
-
-            # We now post-process highlights with a windowing function to restrict the total text returned
-            if 'hl' in query:
-                should_postprocess_response = True
-
-                if 'hl.q' not in query:
-                    query['hl.q'] = query['q']
-
-            if unhighlightable_publishers and 'hl' in query:
-                if 'publisher' not in query['fl']:
-                    query['fl'] = query['fl'] + ',publisher'
-                should_postprocess_response = True
-
-        boost_type_map = current_app.config.get('SOLR_SERVICE_BOOST_TYPES', dict())
-        if boost_type_map and 'boostType' in query:
-            boost_types = []
-            if isinstance(query['boostType'], str):
-                boost_types = [query['boostType']]
-            elif isinstance(query['boostType'], list):
-                boost_types = query['boostType']
-
-            if 'defType' not in query:
-                query['defType'] = 'aqp'
-            query['boost'] = " ".join([boost_type_map[boost_type] for boost_type in boost_types
-                                       if boost_type in boost_type_map])
-
-        return should_postprocess_response
+        ctx.response = r
+        return middleware.run_postprocess(ctx)
 
     def postprocess_response(self, r: requests.Response) -> dict:
-        response_data = r.json()
-        unhighlightable_publishers = current_app.config.get('SOLR_SERVICE_DISALLOWED_HIGHLIGHTS_PUBLISHERS', [])
-        unhighlightable_docs = []
-
-        for doc in response_data['response']['docs']:
-            if 'publisher' not in doc:
-                continue
-
-            if type(doc['publisher']) is list:
-                for publisher in doc['publisher']:
-                    if publisher.lower() in unhighlightable_publishers:
-                        unhighlightable_docs.append(doc['id'])
-                        break
-            else:
-                if doc['publisher'].lower() in unhighlightable_publishers:
-                    unhighlightable_docs.append(doc['id'])
-
-        for remove_doc in unhighlightable_docs:
-            if remove_doc in response_data['highlighting']:
-                doc_highlights = response_data['highlighting'][remove_doc]
-
-                for remove_key in ['body', 'ack']:
-                    if remove_key in doc_highlights:
-                        del doc_highlights[remove_key]
-
-        max_frag = current_app.config.get('SOLR_SERVICE_MAX_FRAGSIZE', 200)
-        for doc_id in list(response_data['highlighting'].keys()):
-            current_highlights = response_data['highlighting'][doc_id]
-            new_highlights = dict()
-
-            for field in current_highlights.keys():
-                new_highlights[field] = [
-                    windowed_highlight
-                    for highlight in current_highlights[field]
-                    for windowed_highlight in self.apply_highlight_window(highlight, max_frag)
-                ]
-
-            response_data['highlighting'][doc_id] = new_highlights
-        
-        for _, doc_highlights in response_data['highlighting'].items():
-            for field, highlights in list(doc_highlights.items()):
-                doc_highlights[field] = [highlight for highlight in highlights
-                                         if highlight is not None and str(highlight).strip() != ""]
-
-        response_data['filtered'] = 'true'
-
-        return response_data
+        return _postprocess.postprocess_response(r.json(), current_app.config)
 
     def apply_highlight_window(self, highlight_text: str, max_len: int) -> List[str]:
-        highlight_pattern = re.compile(r'<em>[^>]*</em>', re.IGNORECASE)
-
-        matches = list(re.finditer(highlight_pattern, highlight_text))
-        if not matches:
-            return []
-
-        # Greedily group consecutive matches that fit within a single max_len window
-        groups = []
-        current_group = [matches[0]]
-        for match in matches[1:]:
-            if match.end() - current_group[0].start() <= max_len:
-                current_group.append(match)
-            else:
-                groups.append(current_group)
-                current_group = [match]
-        groups.append(current_group)
-
-        windowed_snippets = []
-        text_len = len(highlight_text)
-
-        for group in groups:
-            group_start = group[0].start()
-            group_end = group[-1].end()
-            extent = group_end - group_start
-
-            if extent > max_len:
-                continue
-
-            remaining = max_len - extent
-            pad_before = remaining // 2
-            pad_after = remaining - pad_before
-
-            win_start = group_start - pad_before
-            win_end = group_end + pad_after
-
-            # Redistribute unused padding at text boundaries
-            if win_start < 0:
-                win_end = min(text_len, win_end - win_start)
-                win_start = 0
-            if win_end > text_len:
-                win_start = max(0, win_start - (win_end - text_len))
-                win_end = text_len
-
-            windowed_snippets.append(highlight_text[win_start:win_end])
-
-        return windowed_snippets
+        return _apply_highlight_window(highlight_text, max_len)
 
     @staticmethod
     def set_cookies(request):
@@ -257,389 +124,46 @@ class SolrInterface(Resource):
         :return: the single cookie with the cookie_name or None
         :rtype dict or None
         """
-        cookie_names = current_app.config.get('SOLR_SERVICE_FORWARDED_COOKIES', {})
-        cookie = {}
-        for cookie_name in cookie_names:
-            value = request.cookies.get(cookie_name, None)
-            if value:
-                cookie[cookie_name] = value
-        if cookie:
-            return cookie
-        else:
-            return None
-
-    def apply_protective_filters(self, payload, user_id, protected_fields, key):
-        """
-        Adds filters to the query that should limit results to conditions
-        that are associted with the user_id+protected_field. If a field is
-        not found in the db of limits, it will not be returned to the user
-
-        :param payload: raw request payload
-        :param user_id: string, user id as known to ADS API
-        :param protected_fields: list of strings, fields
-        :param key: string, name of the field we are currently processing
-            (typically 'fl', but could be 'anything.fl' when dealing
-            with subrequests)
-        """
-        fl = payload.get(key, 'id')
-        if key == 'fl':
-            fq = payload.get('fq', [])
-            fq_key = 'fq'
-        else:
-            prefix = key.rsplit('.', 1)[0]
-            fq_key = '%s.fq' % (prefix)
-            fq = payload.get(fq_key, [])
-
-
-        if not isinstance(fq, list):
-            fq = [fq]
-
-        payload[fq_key] = fq
-
-        with current_app.session_scope() as session:
-            for f in session.query(Limits).filter(Limits.uid==user_id, or_(Limits.field==x for x in protected_fields)).all():
-                if f.filter:
-                    fl = u'{0},{1}'.format(fl, f.field)
-                    fq.append(str(f.filter))
-                    payload['fl'] = fl
-            session.commit()
+        return transport.select_cookies(request, current_app.config)
 
     def cleanup_solr_request(self, payload, user_id=None, handler_class="default"):
         """
-        Sanitizes a request before it is passed to solr
+        Sanitizes a request before it is passed to solr. Thin wrapper that binds
+        this resource's handler map / logging params to the policy in
+        :mod:`solr.sanitize`.
 
-        :param payload: dict, raw request payload. Warning: we'll
-            modify the dictionary directly
+        :param payload: dict, raw request payload (modified in place)
         :kwarg user_id: string, identifying the user
 
         :return: tuple - (sanitized payload, headers for solr)
         """
-
-        if not user_id:
-            user_id = request.headers.get('X-Adsws-Uid', 'default')
-            if user_id == 'default':
-                user_id = request.headers.get('X-api-uid', 'default')
-
-        headers = {}
-        _h = request.headers.get('Content-Type', 'application/x-www-form-urlencoded')
-        if 'big-query' not in _h: # only let big-query headers pass unmolested
-            _h = 'application/x-www-form-urlencoded'
-        headers['Content-Type'] =  _h
-
-        # trace id, Host, token header are important for proper routing/logging
-        handler = self.handler.get(handler_class, self.handler.get("default", "-"))
-        headers['Host'] = self.get_host(current_app.config.get(handler))
-        internal_logging = []
-        for internal_param, default in self.internal_logging_params.items():
-            if internal_param in request.headers:
-                internal_logging.append("{}={}".format(internal_param, request.headers[internal_param]))
-                headers[internal_param] = request.headers[internal_param]
-            else:
-                # Make sure solr always reports the parameter to facilitate regex logging parsing
-                internal_logging.append("{}={}".format(internal_param, default))
-
-        payload['internal_logging_params'] = ";".join(internal_logging)
-        payload['wt'] = 'json'
-
-
-        # Ensure there is a single rows
-        if 'rows' not in payload:
-            payload['rows'] = current_app.config.get('SOLR_SERVICE_DEFAULT_ROWS', 10)
-
-        # Ensure there is a single start value
-        start = 0
-        if 'start' in payload:
-            start = _safe_int(payload['start'], default=0)
-        payload['start'] = start
-
-        # Ensure there is one fl value
-        if 'fl' not in payload:
-            payload['fl'] = 'id'
-
-        # Amount of time, in milliseconds, allowed for a search to complete (incompatible with cursorMark)
-        # - This value is only checked at the time of: Query Expansion, and Document collection
-        if 'cursorMark' not in payload:
-            time_allowed = current_app.config.get('SOLR_SERVICE_TIME_ALLOWED_MS')
-            if time_allowed:
-                payload['timeAllowed'] = time_allowed
-
-        max_hl = current_app.config.get('SOLR_SERVICE_MAX_SNIPPETS', 4)
-        max_frag = current_app.config.get('SOLR_SERVICE_MAX_FRAGSIZE', 200)*4
-
-        # Highlight queries need to be limited per publisher agreements,
-        # so inject the limit terms if they don't exist.
-        if 'hl' in payload:
-            if 'hl.maxHighlightCharacters' not in payload:
-                payload['hl.maxHighlightCharacters'] = max_frag
-
-        for k,v in list(payload.items()):
-            if 'hl.' in k:
-                if '.snippets' in k:
-                    payload[k] = max(0, min(_safe_int(v, default=max_hl), max_hl))
-                elif '.fragsize' in k:
-                    payload[k] = max(1, min(_safe_int(v, default=max_frag), max_frag)) #0 would return whole field
-                    payload['hl.maxHighlightCharacters'] = payload[k]
-            if k == 'hl.fl':
-                self._cleanup_fields(payload, k, current_app.config.get('SOLR_SERVICE_ALLOWED_HIGHLIGHTS_FIELDS'))
-            if k == 'fl' or ('.fl' in k and k != 'hl.fl'):
-                self._cleanup_fl(payload, user_id, k)
-            if k == 'rows' or '.rows' in k:
-                self._cleanup_rows(payload, user_id, k)
-            if k == 'facet.field':
-                self._cleanup_fields(payload, k, current_app.config.get('SOLR_SERVICE_ALLOWED_FACET_FIELDS'))
-            if k == 'facet.pivot':
-                self._cleanup_fields(payload, k, current_app.config.get('SOLR_SERVICE_ALLOWED_FACET_PIVOT'))
-            if k == 'stats.field':
-                self._cleanup_fields(payload, k, current_app.config.get('SOLR_SERVICE_ALLOWED_STATS_FIELDS'))
-            if k == 'sort':
-                self._cleanup_fields(payload, k, current_app.config.get('SOLR_SERVICE_ALLOWED_SORT_FIELDS'))
-
-        return payload, headers
-
-    def _cleanup_fields(self, payload, key, allowed_fields):
-        """ Only allow certain fields """
-        values = payload[key]
-        if not isinstance(values, list):
-            values = [values]
-
-        fields = []
-        for y in values:
-            fields.extend([i.strip().lower() for i in y.split(',')])
-
-        if allowed_fields:
-            fields = [x for x in fields if x in allowed_fields]
-
-        payload[key] = ','.join(fields)
-
-
-    def _cleanup_rows(self, payload, user_id, key):
-        """Ensure rows does not bypass the max rows limit"""
-        value = payload[key]
-        default_rows = current_app.config.get('SOLR_SERVICE_DEFAULT_ROWS', 10)
-        max_rows = int(current_app.config.get('SOLR_SERVICE_MAX_ROWS', 100))
-        payload[key] = min(_safe_int(value, default=default_rows), max_rows)
-
-    def _cleanup_fl(self, payload, user_id, key):
-
-        values = payload[key]
-
-        if not isinstance(values, list):
-            values = [values]
-
-        fields = []
-        for y in values:
-            fields.extend([i.strip().lower() for i in y.split(',')])
-
-        disallowed = current_app.config.get(
-            'SOLR_SERVICE_DISALLOWED_FIELDS'
+        return sanitize.cleanup_solr_request(
+            payload, request, self.handler,
+            handler_class=handler_class,
+            internal_logging_params=self.internal_logging_params,
+            user_id=user_id,
         )
 
-        protected_fields = []
-        if disallowed:
-            protected_fields = [x for x in fields if x in disallowed]
-            fields = [x for x in fields if x not in disallowed]
-
-        if len(fields) == 0:
-            fields.append('id')
-
-        while '*' in fields:
-            fields.pop(fields.index('*'))
-
-        if len(fields) == 0:
-            fields = current_app.config.get('SOLR_SERVICE_ALLOWED_FIELDS')
-
-        payload[key] = ','.join(fields)
-
-        if len(protected_fields) > 0:
-            self.apply_protective_filters(payload, user_id, protected_fields, key)
-
-
-    def get_host(self, url):
-        """Just extracts the host from the url."""
-        return self._host or self._get_host(url)
 
     def _get_host(self, url):
-        parts = url.split('/')
-        if 'http' in parts[0].lower():
-            self._host = parts[2]
-        else:
-            self._host = parts[0]
+        self._host = _parse_host(url)
         return self._host
 
     def _extract_docs_values(self, input):
-        out = []
-        i = 0
-        while input.find('docs(', i) > -1:
-            i = input.index('docs(', i) + 5
-            j = i
-            while input[j] != ')' and j < len(input):
-                j += 1
-            out.append(input[i:j])
-            i = j + 1
-        return out
+        return _extract_docs_values(input)
 
     def check_for_embedded_bigquery(self, params, request, headers, handler_class="default"):
-        """Checks for the presence of docs() query any where inside
-        the query parameters; if present - we'll verify/update
-        the query with data.
-
-        This function can also be used to process bigquery request
-        (i.e. no docs() operator is present)
-        """
-        streams = set()
-        for k,v in params.items():
-            if 'q' in k: # well, i was lying - we'll only check params that *could* be a query
-                if isinstance(v, basestring):
-                    if 'docs(' in v:
-                        streams.update(self._extract_docs_values(v))
-                else:
-                    for x in v:
-                        if 'docs(' in x:
-                            streams.update(self._extract_docs_values(x))
-
-        # old-hack, bigquery can be passed without specifying 'fq' parameter
-        # we need to detect that situation and fill in the missing detail
-        # this is only accepted if the data was passed in request.data
-        # if user tried to send the data with anonymous request.fiel stream
-        # they must set the appropriate headers
-        if request.data and isinstance(request.data, basestring) and len(request.data) > 0:
-            if 'fq' not in params:
-                params['fq'] = [u'{!bitset}']
-            elif isinstance(params['fq'], str) and '{!bitset}' not in params['fq']:
-                params['fq'] += u' {!bitset}'
-            elif isinstance(params['fq'], list) and len([x for x in params['fq'] if '!bitset' in x]) == 0:
-                params['fq'].append(u'{!bitset}')
-
-            # we'll package request.data into files
-            streams.add('old-bad-behaviour')
-            params['old-bad-behaviour'] = request.data
-
-
-        # what is left is missing and we need to fill in the gaps
-        files = self._get_stream_data(params, list(streams), request, handler_class=handler_class)
-
-        # let requests library pick the appropriate ctype
-        if len(files):
-            del headers['Content-Type']
-
-        return files
-
-    def _get_stream_data(self, params, streams, request, handler_class="default"):
-        # TODO: it seems natural that this functionality could live inside
-        # myads; there we'd be not forced to query a remote service; however
-        # I fear that is not really what people are asking for - they just
-        # want any/all queries to work when we say foo AND docs(barxxxx)
-
-        out = {}
-
-        # must verify the input is not supplied and should be loaded
-        for sn in streams:
-            if sn in params: # it can be in the parameters, which is OK...
-                x = params[sn]
-                if isinstance(x, list) and len(x) > 0:
-                    x = x[0]
-                out[sn] = (sn, x, 'big-query/csv')
-                streams.remove(sn)
-                del params[sn]
-            elif request.data and not isinstance(request.data, basestring) and sn in request.data: # if data is a dict...
-                x = request.data[sn]
-                if isinstance(x, list) and len(x) > 0:
-                    x = x[0]
-                out[sn] = (sn, x, 'big-query/csv')
-                streams.remove(sn)
-            elif request.files and sn in request.files:
-                f = request.files[sn]
-                out[sn] = (f.name, f.stream, f.mimetype)
-                streams.remove(sn)
-
-
-        for s in streams:
-            if '/' in s:
-                prefix, value = s.split('/', 1)
-            else:
-                prefix = ''
-                value = s
-
-            new_headers = {'Authorization': request.headers['Authorization']}
-            if 'X-Forwarded-Authorization' in request.headers:
-                new_headers['X-Forwarded-Authorization'] = request.headers['X-Forwarded-Authorization']
-            # trace id, Host, token header are important for proper routing/logging
-            handler = self.handler.get(handler_class, self.handler.get("default", "-"))
-            new_headers['Host'] = self.get_host(current_app.config.get(handler))
-            for internal_param in self.internal_logging_params.keys():
-                if internal_param in request.headers:
-                    new_headers[internal_param] = request.headers[internal_param]
-
-            docs = None
-
-            if prefix == 'library':
-                q = self._harvest_library(value, new_headers)
-                docs = 'bibcode\n' + '\n'.join(q['documents'])
-
-            else:
-                r = current_app.client.get(current_app.config['VAULT_ENDPOINT'] + '/' + value,
-                                           headers=new_headers)
-                r.raise_for_status()
-
-                # json serialized dictionary with two keys, 'query' and 'bigquery'
-                # their values are strings (for query urlencoded parameters)
-                q = json.loads(r.json()['query'])
-                try:
-                    params = parse_qs(q['query'])
-                except:
-                    params = {}
-
-                if value in params: # it is encoded in parameters
-                    docs = params[value]
-                    if isinstance(docs, list): # urlparsing can do that
-                        docs = docs[0]
-                elif 'bigquery' in q and q['bigquery']: # this query has a bigquery, so it must be that
-                    docs = q['bigquery']
-                else:
-                    raise Exception('Query relies on {} however such queryid is not available via API'.format(s))
-
-            out[s] = (s, docs, "big-query/csv")
-
-        # copy over remaining files
-        for k,v in request.files.items():
-            if k not in out:
-                out[k] = (v.name, v.stream, v.mimetype)
-        return out
+        """Resolve any embedded bigquery (docs() operators or raw bigquery data)
+        into multipart files. Thin wrapper binding this resource's handler map /
+        logging params to the logic in :mod:`solr.bigquery`."""
+        return bigquery.check_for_embedded_bigquery(
+            params, request, headers, self.handler,
+            handler_class=handler_class,
+            internal_logging_params=self.internal_logging_params,
+        )
 
     def _harvest_library(self, library_id, headers):
-        """I looked inside the impl of the biblib/libraries
-        and unfortunately it is quite expensive; not only does
-        it make (automatic) bigquery to verify bibcodes with
-        every request; it also loads *every time* set of all
-        bibcodes, even if it only returns section of it -
-        we would really do better if there existed an endpoint
-        that just returns all bibcodes saved in the library"""
-
-
-        maxr = current_app.config.get('BIBLIB_MAX_ROWS', 2000)
-        params = {'rows': maxr, 'start': 0}
-        out = {'documents': set(), 'library': library_id}
-        while True:
-            r = current_app.client.get(current_app.config['LIBRARY_ENDPOINT'] + '/' + library_id,
-                                       params=params,
-                                       headers=headers)
-            r.raise_for_status()
-
-            q = r.json()
-            oldcount = len(out['documents'])
-            out['documents'].update(q['documents'])
-            out['metadata'] = q['metadata']
-
-            # all of these conditions because biblib doesn't guarantee stable sort order, sigh...
-            if 'num_documents' in out['metadata'] and out['metadata']['num_documents'] <= len(out['documents']) or \
-                len(q['documents']) < maxr or \
-                oldcount == len(out['documents']) or \
-                len(q['documents']) == 0:
-                break
-
-            params['start'] = params['start'] + maxr
-
-        return out
+        return bigquery._harvest_library(library_id, headers)
 
 
 class Tvrh(SolrInterface):
@@ -662,18 +186,7 @@ class Search(SolrInterface):
                'anonymous_embedded_bigquery': 'ANONYMOUS_SOLR_SERVICE_BIGQUERY_HANDLER'}
 
     def get_handler_class(self):
-        """Identify bot requests based on their authentication token"""
-        forwarded_authorization = request.headers.get('X-Forwarded-Authorization', [])
-        if forwarded_authorization and len(forwarded_authorization) > 7:
-            request_token = forwarded_authorization[7:]
-        else:
-            request_token = request.headers.get('Authorization', [])[7:]
-        if request_token in current_app.config.get('BOT_TOKENS', []):
-            return "bot"
-        elif int(request.headers.get("X-api-uid", 0)) == 1:
-            return "anonymous"
-        else:
-            return "default"
+        return handlers.classify_request()
 
 class Qtree(SolrInterface):
     """Exposes the qtree endpoint"""
@@ -696,18 +209,7 @@ class BigQuery(SolrInterface):
                'anonymous_embedded_bigquery': 'ANONYMOUS_SOLR_SERVICE_BIGQUERY_HANDLER'}
 
     def get_handler_class(self):
-        """Identify bot requests based on their authentication token"""
-        forwarded_authorization = request.headers.get('X-Forwarded-Authorization', [])
-        if forwarded_authorization and len(forwarded_authorization) > 7:
-            request_token = forwarded_authorization[7:]
-        else:
-            request_token = request.headers.get('Authorization', [])[7:]
-        if request_token in current_app.config.get('BOT_TOKENS', []):
-            return "bot"
-        elif int(request.headers.get("X-api-uid", 0)) == 1:
-            return "anonymous"
-        else:
-            return "default"
+        return handlers.classify_request()
 
     def post(self):
         handler_class = self.get_handler_class()
@@ -720,11 +222,7 @@ class BigQuery(SolrInterface):
         files = self.check_for_embedded_bigquery(query, request, headers, handler_class=handler_class)
 
         if files and len(files) > 0:
-            try:
-                current_user_id = current_user.get_id()
-            except:
-                # If solr service is not shipped with adsws, this will fail and it is ok
-                current_user_id = request.headers.get("X-api-uid", None)
+            current_user_id = self._current_user_id()
             current_app.logger.info("Dispatching 'POST' request to endpoint '{}' for user '{}'".format(current_app.config[self.handler[handler_class]], current_user_id or "anonymous"))
             r = requests.post(
                 current_app.config[self.handler[handler_class]],
@@ -739,24 +237,4 @@ class BigQuery(SolrInterface):
             current_app.logger.error(message)
             return json.dumps({'error': message}), 400
         return r.text, r.status_code, r.headers
-
-
-def _safe_int(val, default=0):
-    if isinstance(val, (list, tuple)):
-        val = val[0]
-    try:
-        return int(val)
-    except (ValueError, TypeError):
-        return default
-
-
-class ClosingTuple(tuple):
-    """The sole raison d'etre of this class is to accommodate
-    Flask which wants to call close() on anything inside
-    request.files; and to allow requests to use files
-    as (name, fileobj, mimetype)"""
-    def close(self):
-        for x in self:
-            if hasattr(x, 'close'):
-                x.close()
 
