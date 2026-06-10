@@ -15,6 +15,7 @@ import json
 from . import sanitize
 from . import middleware
 from . import bigquery
+from . import transport
 from . import preprocess as _preprocess
 from . import postprocess as _postprocess
 from .postprocess import apply_highlight_window as _apply_highlight_window
@@ -121,16 +122,7 @@ class SolrInterface(Resource):
         :return: the single cookie with the cookie_name or None
         :rtype dict or None
         """
-        cookie_names = current_app.config.get('SOLR_SERVICE_FORWARDED_COOKIES', {})
-        cookie = {}
-        for cookie_name in cookie_names:
-            value = request.cookies.get(cookie_name, None)
-            if value:
-                cookie[cookie_name] = value
-        if cookie:
-            return cookie
-        else:
-            return None
+        return transport.select_cookies(request, current_app.config)
 
     def apply_protective_filters(self, payload, user_id, protected_fields, key):
         return sanitize.apply_protective_filters(payload, user_id, protected_fields, key)
