@@ -2,6 +2,37 @@
 """
 solr stubdata
 """
+import json as _json
+
+# A response that exercises postprocess_response: it carries a `highlighting`
+# block and docs with a `publisher` field (string and list forms, including the
+# disallowed `ieee` publisher). Kept separate from example_solr_response so the
+# MockSolrResponse `fl`-slicing logic is unaffected.
+highlighting_solr_response = _json.dumps({
+    "responseHeader": {"status": 0, "QTime": 1, "params": {}},
+    "response": {
+        "numFound": 3,
+        "start": 0,
+        "docs": [
+            {"id": "1", "publisher": "Elsevier"},
+            {"id": "2", "publisher": ["Foo", "IEEE"]},
+            {"id": "3", "publisher": "IEEE"},
+        ],
+    },
+    "highlighting": {
+        "1": {"abstract": ["a <em>star</em> here"]},
+        "2": {
+            "body": ["the <em>star</em> body text"],
+            "abstract": ["abs <em>star</em> text"],
+        },
+        "3": {
+            "body": ["body <em>star</em> content"],
+            "ack": ["ack <em>star</em> note"],
+            "title": ["title <em>star</em> words"],
+            "nomatch": ["text with no highlight tags"],
+        },
+    },
+})
 
 example_solr_response = r'''{
   "responseHeader":{
