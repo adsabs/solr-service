@@ -2,13 +2,9 @@ from __future__ import absolute_import
 
 from future import standard_library
 standard_library.install_aliases()
-from typing import List
 
 import json
 from flask import current_app
-
-from . import preprocess as _preprocess
-from . import postprocess as _postprocess
 
 
 class Context(object):
@@ -50,31 +46,13 @@ class PostProcessor(object):
         raise NotImplementedError
 
 
-# --- seeded registries -------------------------------------------------------
-# Stage 3 seeds each registry with a single adapter delegating to the (still
-# monolithic) preprocess/postprocess functions. Stage 4 replaces these with
-# discrete, individually-testable processors in the same order. Appending a new
-# processor here is all it takes to add behavior.
-
-class _PreprocessAdapter(PreProcessor):
-    def process(self, ctx):
-        ctx.should_postprocess = _preprocess.preprocess_request(
-            ctx.handler_key, ctx.query, ctx.config)
-
-
-class _PostprocessAdapter(PostProcessor):
-    def process(self, ctx):
-        _postprocess.postprocess_response(ctx.response_data, ctx.config)
-
-
-PREPROCESSORS = [_PreprocessAdapter()]   # type: List[PreProcessor]
-POSTPROCESSORS = [_PostprocessAdapter()] # type: List[PostProcessor]
-
-
-# --- drivers -----------------------------------------------------------------
-
 def run_preprocess(ctx):
-    """Run every applicable pre-processor in registration order."""
+    """Run every applicable pre-processor in registration order.
+
+    The ordered registry lives in :mod:`solr.preprocess` (co-located with the
+    processors); it is imported lazily here to keep the dependency one-way.
+    """
+    from .preprocess import PREPROCESSORS
     for processor in PREPROCESSORS:
         if processor.applies(ctx):
             processor.process(ctx)
@@ -84,20 +62,20 @@ def run_postprocess(ctx):
     """Run post-processors (gated by should_postprocess + response.ok) and return
     the final ``(body, status, headers)`` tuple for the resource to hand back.
 
-    When post-processing applies, the response dict is mutated by the registry
-    and serialized once here (the string passes straight through the app's JSON
-    representation without re-serialization). On any failure, or when no
-    post-processing is needed, the raw Solr text is returned unchanged.
+    When post-processing applies, the parsed response dict is mutated by the
+    registry and serialized once here (the string passes straight through the
+    app's JSON representation without re-serialization). On any failure, or when
+    no post-processing is needed, the raw Solr text is returned unchanged.
     """
+    from .postprocess import POSTPROCESSORS
     r = ctx.response
     if ctx.should_postprocess and r.ok:
         try:
-            response_data = r.json()
+            ctx.response_data = r.json()
             for processor in POSTPROCESSORS:
                 if processor.applies(ctx):
-                    ctx.response_data = response_data
                     processor.process(ctx)
-            return json.dumps(response_data), r.status_code, r.headers
+            return json.dumps(ctx.response_data), r.status_code, r.headers
         except Exception as e:
             current_app.logger.error(e.with_traceback())
 

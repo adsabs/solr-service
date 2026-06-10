@@ -7,61 +7,7 @@ standard_library.install_aliases()
 from builtins import str
 from typing import List
 
-
-def postprocess_response(response_data, config):
-    """Shape a Solr response in place: drop disallowed-publisher highlights,
-    window every remaining highlight, prune empties, and stamp ``filtered``.
-
-    :param response_data: the parsed Solr response dict (mutated in place)
-    :param config: the flask app config
-    :return: the same dict
-    """
-    unhighlightable_publishers = config.get('SOLR_SERVICE_DISALLOWED_HIGHLIGHTS_PUBLISHERS', [])
-    unhighlightable_docs = []
-
-    for doc in response_data['response']['docs']:
-        if 'publisher' not in doc:
-            continue
-
-        if type(doc['publisher']) is list:
-            for publisher in doc['publisher']:
-                if publisher.lower() in unhighlightable_publishers:
-                    unhighlightable_docs.append(doc['id'])
-                    break
-        else:
-            if doc['publisher'].lower() in unhighlightable_publishers:
-                unhighlightable_docs.append(doc['id'])
-
-    for remove_doc in unhighlightable_docs:
-        if remove_doc in response_data['highlighting']:
-            doc_highlights = response_data['highlighting'][remove_doc]
-
-            for remove_key in ['body', 'ack']:
-                if remove_key in doc_highlights:
-                    del doc_highlights[remove_key]
-
-    max_frag = config.get('SOLR_SERVICE_MAX_FRAGSIZE', 200)
-    for doc_id in list(response_data['highlighting'].keys()):
-        current_highlights = response_data['highlighting'][doc_id]
-        new_highlights = dict()
-
-        for field in current_highlights.keys():
-            new_highlights[field] = [
-                windowed_highlight
-                for highlight in current_highlights[field]
-                for windowed_highlight in apply_highlight_window(highlight, max_frag)
-            ]
-
-        response_data['highlighting'][doc_id] = new_highlights
-
-    for _, doc_highlights in response_data['highlighting'].items():
-        for field, highlights in list(doc_highlights.items()):
-            doc_highlights[field] = [highlight for highlight in highlights
-                                     if highlight is not None and str(highlight).strip() != ""]
-
-    response_data['filtered'] = 'true'
-
-    return response_data
+from .middleware import PostProcessor, Context
 
 
 def apply_highlight_window(highlight_text, max_len):
@@ -120,3 +66,95 @@ def apply_highlight_window(highlight_text, max_len):
         windowed_snippets.append(highlight_text[win_start:win_end])
 
     return windowed_snippets
+
+
+class PublisherHighlightRemover(PostProcessor):
+    """Drop ``body``/``ack`` highlights for docs whose publisher is disallowed
+    (e.g. IEEE), per publisher agreements."""
+
+    def process(self, ctx):
+        response_data = ctx.response_data
+        unhighlightable_publishers = ctx.config.get('SOLR_SERVICE_DISALLOWED_HIGHLIGHTS_PUBLISHERS', [])
+        unhighlightable_docs = []
+
+        for doc in response_data['response']['docs']:
+            if 'publisher' not in doc:
+                continue
+
+            if type(doc['publisher']) is list:
+                for publisher in doc['publisher']:
+                    if publisher.lower() in unhighlightable_publishers:
+                        unhighlightable_docs.append(doc['id'])
+                        break
+            else:
+                if doc['publisher'].lower() in unhighlightable_publishers:
+                    unhighlightable_docs.append(doc['id'])
+
+        for remove_doc in unhighlightable_docs:
+            if remove_doc in response_data['highlighting']:
+                doc_highlights = response_data['highlighting'][remove_doc]
+
+                for remove_key in ['body', 'ack']:
+                    if remove_key in doc_highlights:
+                        del doc_highlights[remove_key]
+
+
+class HighlightWindower(PostProcessor):
+    """Apply the windowing function to every remaining highlight snippet."""
+
+    def process(self, ctx):
+        response_data = ctx.response_data
+        max_frag = ctx.config.get('SOLR_SERVICE_MAX_FRAGSIZE', 200)
+        for doc_id in list(response_data['highlighting'].keys()):
+            current_highlights = response_data['highlighting'][doc_id]
+            new_highlights = dict()
+
+            for field in current_highlights.keys():
+                new_highlights[field] = [
+                    windowed_highlight
+                    for highlight in current_highlights[field]
+                    for windowed_highlight in apply_highlight_window(highlight, max_frag)
+                ]
+
+            response_data['highlighting'][doc_id] = new_highlights
+
+
+class EmptyHighlightPruner(PostProcessor):
+    """Strip out None / whitespace-only highlight snippets."""
+
+    def process(self, ctx):
+        response_data = ctx.response_data
+        for _, doc_highlights in response_data['highlighting'].items():
+            for field, highlights in list(doc_highlights.items()):
+                doc_highlights[field] = [highlight for highlight in highlights
+                                         if highlight is not None and str(highlight).strip() != ""]
+
+
+class FilteredFlagSetter(PostProcessor):
+    """Mark the response as having been post-processed."""
+
+    def process(self, ctx):
+        ctx.response_data['filtered'] = 'true'
+
+
+# Ordered post-dispatch pipeline. Order matters: publisher removal happens before
+# windowing, pruning before the flag. Add new behavior by inserting here.
+POSTPROCESSORS = [
+    PublisherHighlightRemover(),
+    HighlightWindower(),
+    EmptyHighlightPruner(),
+    FilteredFlagSetter(),
+]
+
+
+def postprocess_response(response_data, config):
+    """Run the post-processing pipeline over an already-parsed Solr response.
+    Thin convenience wrapper around the POSTPROCESSORS registry; mutates and
+    returns ``response_data``.
+    """
+    ctx = Context(None, {}, None, config)
+    ctx.response_data = response_data
+    for processor in POSTPROCESSORS:
+        if processor.applies(ctx):
+            processor.process(ctx)
+    return response_data

@@ -4,48 +4,71 @@ from future import standard_library
 standard_library.install_aliases()
 from builtins import str
 
+from .middleware import PreProcessor, Context
 
-def preprocess_request(handler, query, config):
-    """Rewrite the outbound query before it is dispatched to Solr.
 
-    Injects configured query params, fills the default ``fl`` for the search
-    handler, wires up highlight post-processing (``hl.q`` and the publisher
-    field), and maps ``boostType`` onto a Solr ``boost`` expression.
+class InjectQueryParams(PreProcessor):
+    """Inject forced query params from SOLR_INJECT_QUERY_PARAMS (without
+    clobbering anything the caller already supplied)."""
 
-    :param handler: the resolved config key for the target handler url
-    :param query: the outbound query dict (mutated in place)
-    :param config: the flask app config
-    :return: bool, whether the response will need post-processing
-    """
-    should_postprocess_response = False
+    def applies(self, ctx):
+        return bool(ctx.config.get("SOLR_INJECT_QUERY_PARAMS", {}))
 
-    if config.get("SOLR_INJECT_QUERY_PARAMS", {}):
-        injected_params = config.get("SOLR_INJECT_QUERY_PARAMS", {})
+    def process(self, ctx):
+        injected_params = ctx.config.get("SOLR_INJECT_QUERY_PARAMS", {})
         for injected_param, value in injected_params.items():
-            if injected_param not in query.keys():
-                query[injected_param] = value
+            if injected_param not in ctx.query.keys():
+                ctx.query[injected_param] = value
 
-    unhighlightable_publishers = config.get('SOLR_SERVICE_DISALLOWED_HIGHLIGHTS_PUBLISHERS', [])
-    default_fields = config.get('SOLR_SERVICE_DEFAULT_FIELDS', [])
 
-    if default_fields and handler == 'SOLR_SERVICE_SEARCH_HANDLER':
+class SearchDefaultsAndHighlightFlag(PreProcessor):
+    """For the search handler: fill the default field list, and when
+    highlighting is requested wire up ``hl.q`` and flag post-processing."""
+
+    def applies(self, ctx):
+        return bool(ctx.config.get('SOLR_SERVICE_DEFAULT_FIELDS', [])) \
+            and ctx.handler_key == 'SOLR_SERVICE_SEARCH_HANDLER'
+
+    def process(self, ctx):
+        query = ctx.query
         if 'fl' not in query:
-            query['fl'] = ",".join(default_fields)
+            query['fl'] = ",".join(ctx.config.get('SOLR_SERVICE_DEFAULT_FIELDS', []))
 
         # We now post-process highlights with a windowing function to restrict the total text returned
         if 'hl' in query:
-            should_postprocess_response = True
+            ctx.should_postprocess = True
 
             if 'hl.q' not in query:
                 query['hl.q'] = query['q']
 
-        if unhighlightable_publishers and 'hl' in query:
-            if 'publisher' not in query['fl']:
-                query['fl'] = query['fl'] + ',publisher'
-            should_postprocess_response = True
 
-    boost_type_map = config.get('SOLR_SERVICE_BOOST_TYPES', dict())
-    if boost_type_map and 'boostType' in query:
+class PublisherHighlightFieldInjector(PreProcessor):
+    """When highlights may need to be stripped per publisher agreements, make
+    sure ``publisher`` is fetched so post-processing can act on it."""
+
+    def applies(self, ctx):
+        return bool(ctx.config.get('SOLR_SERVICE_DEFAULT_FIELDS', [])) \
+            and ctx.handler_key == 'SOLR_SERVICE_SEARCH_HANDLER' \
+            and bool(ctx.config.get('SOLR_SERVICE_DISALLOWED_HIGHLIGHTS_PUBLISHERS', [])) \
+            and 'hl' in ctx.query
+
+    def process(self, ctx):
+        query = ctx.query
+        if 'publisher' not in query['fl']:
+            query['fl'] = query['fl'] + ',publisher'
+        ctx.should_postprocess = True
+
+
+class BoostTypeMapper(PreProcessor):
+    """Map the friendly ``boostType`` parameter onto a Solr ``boost`` expression."""
+
+    def applies(self, ctx):
+        return bool(ctx.config.get('SOLR_SERVICE_BOOST_TYPES', dict())) \
+            and 'boostType' in ctx.query
+
+    def process(self, ctx):
+        query = ctx.query
+        boost_type_map = ctx.config.get('SOLR_SERVICE_BOOST_TYPES', dict())
         boost_types = []
         if isinstance(query['boostType'], str):
             boost_types = [query['boostType']]
@@ -57,4 +80,23 @@ def preprocess_request(handler, query, config):
         query['boost'] = " ".join([boost_type_map[boost_type] for boost_type in boost_types
                                    if boost_type in boost_type_map])
 
-    return should_postprocess_response
+
+# Ordered pre-dispatch pipeline. Order matters: SearchDefaults fills `fl` before
+# PublisherHighlightFieldInjector reads it. Add new behavior by inserting here.
+PREPROCESSORS = [
+    InjectQueryParams(),
+    SearchDefaultsAndHighlightFlag(),
+    PublisherHighlightFieldInjector(),
+    BoostTypeMapper(),
+]
+
+
+def preprocess_request(handler, query, config):
+    """Run the pre-processing pipeline over ``query`` and report whether the
+    response will need post-processing. Thin convenience wrapper around the
+    PREPROCESSORS registry; mutates ``query`` in place.
+    """
+    from . import middleware
+    ctx = Context(query, {}, None, config, handler_key=handler)
+    middleware.run_preprocess(ctx)
+    return ctx.should_postprocess
