@@ -1,7 +1,5 @@
 from __future__ import absolute_import
 
-import re
-
 from future import standard_library
 standard_library.install_aliases()
 from builtins import str
@@ -16,6 +14,10 @@ except ImportError:
     pass
 import json
 from .models import Limits
+from ._compat import safe_int as _safe_int
+from .postprocess import apply_highlight_window as _apply_highlight_window
+from .transport import parse_host as _parse_host
+from .bigquery import extract_docs_values as _extract_docs_values
 from sqlalchemy import or_
 from werkzeug.datastructures import MultiDict
 from io import StringIO
@@ -201,52 +203,7 @@ class SolrInterface(Resource):
         return response_data
 
     def apply_highlight_window(self, highlight_text: str, max_len: int) -> List[str]:
-        highlight_pattern = re.compile(r'<em>[^>]*</em>', re.IGNORECASE)
-
-        matches = list(re.finditer(highlight_pattern, highlight_text))
-        if not matches:
-            return []
-
-        # Greedily group consecutive matches that fit within a single max_len window
-        groups = []
-        current_group = [matches[0]]
-        for match in matches[1:]:
-            if match.end() - current_group[0].start() <= max_len:
-                current_group.append(match)
-            else:
-                groups.append(current_group)
-                current_group = [match]
-        groups.append(current_group)
-
-        windowed_snippets = []
-        text_len = len(highlight_text)
-
-        for group in groups:
-            group_start = group[0].start()
-            group_end = group[-1].end()
-            extent = group_end - group_start
-
-            if extent > max_len:
-                continue
-
-            remaining = max_len - extent
-            pad_before = remaining // 2
-            pad_after = remaining - pad_before
-
-            win_start = group_start - pad_before
-            win_end = group_end + pad_after
-
-            # Redistribute unused padding at text boundaries
-            if win_start < 0:
-                win_end = min(text_len, win_end - win_start)
-                win_start = 0
-            if win_end > text_len:
-                win_start = max(0, win_start - (win_end - text_len))
-                win_end = text_len
-
-            windowed_snippets.append(highlight_text[win_start:win_end])
-
-        return windowed_snippets
+        return _apply_highlight_window(highlight_text, max_len)
 
     @staticmethod
     def set_cookies(request):
@@ -459,24 +416,11 @@ class SolrInterface(Resource):
         return self._host or self._get_host(url)
 
     def _get_host(self, url):
-        parts = url.split('/')
-        if 'http' in parts[0].lower():
-            self._host = parts[2]
-        else:
-            self._host = parts[0]
+        self._host = _parse_host(url)
         return self._host
 
     def _extract_docs_values(self, input):
-        out = []
-        i = 0
-        while input.find('docs(', i) > -1:
-            i = input.index('docs(', i) + 5
-            j = i
-            while input[j] != ')' and j < len(input):
-                j += 1
-            out.append(input[i:j])
-            i = j + 1
-        return out
+        return _extract_docs_values(input)
 
     def check_for_embedded_bigquery(self, params, request, headers, handler_class="default"):
         """Checks for the presence of docs() query any where inside
@@ -739,24 +683,4 @@ class BigQuery(SolrInterface):
             current_app.logger.error(message)
             return json.dumps({'error': message}), 400
         return r.text, r.status_code, r.headers
-
-
-def _safe_int(val, default=0):
-    if isinstance(val, (list, tuple)):
-        val = val[0]
-    try:
-        return int(val)
-    except (ValueError, TypeError):
-        return default
-
-
-class ClosingTuple(tuple):
-    """The sole raison d'etre of this class is to accommodate
-    Flask which wants to call close() on anything inside
-    request.files; and to allow requests to use files
-    as (name, fileobj, mimetype)"""
-    def close(self):
-        for x in self:
-            if hasattr(x, 'close'):
-                x.close()
 
