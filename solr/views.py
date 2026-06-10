@@ -16,6 +16,7 @@ from . import sanitize
 from . import middleware
 from . import bigquery
 from . import transport
+from . import handlers
 from . import preprocess as _preprocess
 from . import postprocess as _postprocess
 from .postprocess import apply_highlight_window as _apply_highlight_window
@@ -68,7 +69,7 @@ class SolrInterface(Resource):
         files = self.check_for_embedded_bigquery(query, request, headers, handler_class=handler_class)
         if files and len(files): # must be directed to /bigquery
             handler_class += '_embedded_bigquery'
-        handler = self.handler.get(handler_class, self.handler.get("default"))
+        handler = handlers.resolve_handler_key(self.handler, handler_class)
 
         ctx = middleware.Context(
             query, headers, request, current_app.config,
@@ -191,18 +192,7 @@ class Search(SolrInterface):
                'anonymous_embedded_bigquery': 'ANONYMOUS_SOLR_SERVICE_BIGQUERY_HANDLER'}
 
     def get_handler_class(self):
-        """Identify bot requests based on their authentication token"""
-        forwarded_authorization = request.headers.get('X-Forwarded-Authorization', [])
-        if forwarded_authorization and len(forwarded_authorization) > 7:
-            request_token = forwarded_authorization[7:]
-        else:
-            request_token = request.headers.get('Authorization', [])[7:]
-        if request_token in current_app.config.get('BOT_TOKENS', []):
-            return "bot"
-        elif int(request.headers.get("X-api-uid", 0)) == 1:
-            return "anonymous"
-        else:
-            return "default"
+        return handlers.classify_request()
 
 class Qtree(SolrInterface):
     """Exposes the qtree endpoint"""
@@ -225,18 +215,7 @@ class BigQuery(SolrInterface):
                'anonymous_embedded_bigquery': 'ANONYMOUS_SOLR_SERVICE_BIGQUERY_HANDLER'}
 
     def get_handler_class(self):
-        """Identify bot requests based on their authentication token"""
-        forwarded_authorization = request.headers.get('X-Forwarded-Authorization', [])
-        if forwarded_authorization and len(forwarded_authorization) > 7:
-            request_token = forwarded_authorization[7:]
-        else:
-            request_token = request.headers.get('Authorization', [])[7:]
-        if request_token in current_app.config.get('BOT_TOKENS', []):
-            return "bot"
-        elif int(request.headers.get("X-api-uid", 0)) == 1:
-            return "anonymous"
-        else:
-            return "default"
+        return handlers.classify_request()
 
     def post(self):
         handler_class = self.get_handler_class()
