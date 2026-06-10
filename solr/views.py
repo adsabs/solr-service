@@ -14,6 +14,9 @@ except ImportError:
     pass
 import json
 from . import sanitize
+from . import middleware
+from . import preprocess as _preprocess
+from . import postprocess as _postprocess
 from .postprocess import apply_highlight_window as _apply_highlight_window
 from .transport import parse_host as _parse_host
 from .bigquery import extract_docs_values as _extract_docs_values
@@ -70,7 +73,11 @@ class SolrInterface(Resource):
             handler_class += '_embedded_bigquery'
         handler = self.handler.get(handler_class, self.handler.get("default"))
 
-        should_postprocess_response = self.preprocess_request(handler, query)
+        ctx = middleware.Context(
+            query, headers, request, current_app.config,
+            handler_class=handler_class, handler_key=handler, files=files,
+        )
+        middleware.run_preprocess(ctx)
 
         try:
             current_user_id = current_user.get_id()
@@ -97,108 +104,14 @@ class SolrInterface(Resource):
             )
         current_app.logger.info("Received response from from endpoint '{}' with status code '{}'".format(current_app.config[handler], r.status_code))
 
-        # Run this if we've identified a need to alter the response from Solr
-        if should_postprocess_response and r.ok:
-            try:
-                response_data = self.postprocess_response(r)
-
-                return json.dumps(response_data), r.status_code, r.headers
-            except Exception as e:
-                current_app.logger.error(e.with_traceback())
-
-        return r.text, r.status_code, r.headers
+        ctx.response = r
+        return middleware.run_postprocess(ctx)
 
     def preprocess_request(self, handler: str, query) -> bool:
-        should_postprocess_response = False
-
-        if current_app.config.get("SOLR_INJECT_QUERY_PARAMS", {}):
-            injected_params = current_app.config.get("SOLR_INJECT_QUERY_PARAMS", {})
-            for injected_param, value in injected_params.items():
-                if injected_param not in query.keys():
-                    query[injected_param] = value
-
-        unhighlightable_publishers = current_app.config.get('SOLR_SERVICE_DISALLOWED_HIGHLIGHTS_PUBLISHERS', [])
-        default_fields = current_app.config.get('SOLR_SERVICE_DEFAULT_FIELDS', [])
-
-        if default_fields and handler == 'SOLR_SERVICE_SEARCH_HANDLER':
-            if 'fl' not in query:
-                query['fl'] = ",".join(default_fields)
-
-            # We now post-process highlights with a windowing function to restrict the total text returned
-            if 'hl' in query:
-                should_postprocess_response = True
-
-                if 'hl.q' not in query:
-                    query['hl.q'] = query['q']
-
-            if unhighlightable_publishers and 'hl' in query:
-                if 'publisher' not in query['fl']:
-                    query['fl'] = query['fl'] + ',publisher'
-                should_postprocess_response = True
-
-        boost_type_map = current_app.config.get('SOLR_SERVICE_BOOST_TYPES', dict())
-        if boost_type_map and 'boostType' in query:
-            boost_types = []
-            if isinstance(query['boostType'], str):
-                boost_types = [query['boostType']]
-            elif isinstance(query['boostType'], list):
-                boost_types = query['boostType']
-
-            if 'defType' not in query:
-                query['defType'] = 'aqp'
-            query['boost'] = " ".join([boost_type_map[boost_type] for boost_type in boost_types
-                                       if boost_type in boost_type_map])
-
-        return should_postprocess_response
+        return _preprocess.preprocess_request(handler, query, current_app.config)
 
     def postprocess_response(self, r: requests.Response) -> dict:
-        response_data = r.json()
-        unhighlightable_publishers = current_app.config.get('SOLR_SERVICE_DISALLOWED_HIGHLIGHTS_PUBLISHERS', [])
-        unhighlightable_docs = []
-
-        for doc in response_data['response']['docs']:
-            if 'publisher' not in doc:
-                continue
-
-            if type(doc['publisher']) is list:
-                for publisher in doc['publisher']:
-                    if publisher.lower() in unhighlightable_publishers:
-                        unhighlightable_docs.append(doc['id'])
-                        break
-            else:
-                if doc['publisher'].lower() in unhighlightable_publishers:
-                    unhighlightable_docs.append(doc['id'])
-
-        for remove_doc in unhighlightable_docs:
-            if remove_doc in response_data['highlighting']:
-                doc_highlights = response_data['highlighting'][remove_doc]
-
-                for remove_key in ['body', 'ack']:
-                    if remove_key in doc_highlights:
-                        del doc_highlights[remove_key]
-
-        max_frag = current_app.config.get('SOLR_SERVICE_MAX_FRAGSIZE', 200)
-        for doc_id in list(response_data['highlighting'].keys()):
-            current_highlights = response_data['highlighting'][doc_id]
-            new_highlights = dict()
-
-            for field in current_highlights.keys():
-                new_highlights[field] = [
-                    windowed_highlight
-                    for highlight in current_highlights[field]
-                    for windowed_highlight in self.apply_highlight_window(highlight, max_frag)
-                ]
-
-            response_data['highlighting'][doc_id] = new_highlights
-        
-        for _, doc_highlights in response_data['highlighting'].items():
-            for field, highlights in list(doc_highlights.items()):
-                doc_highlights[field] = [highlight for highlight in highlights
-                                         if highlight is not None and str(highlight).strip() != ""]
-
-        response_data['filtered'] = 'true'
-
-        return response_data
+        return _postprocess.postprocess_response(r.json(), current_app.config)
 
     def apply_highlight_window(self, highlight_text: str, max_len: int) -> List[str]:
         return _apply_highlight_window(highlight_text, max_len)
