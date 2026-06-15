@@ -108,7 +108,7 @@ class SolrInterface(Resource):
 
                 return json.dumps(response_data), r.status_code, r.headers
             except Exception as e:
-                current_app.logger.error(e.with_traceback())
+                current_app.logger.error(e)
 
         return r.text, r.status_code, r.headers
 
