@@ -135,7 +135,8 @@ class SolrInterface(Resource):
                 if 'hl.q' not in query:
                     query['hl.q'] = query['q']
 
-            if unhighlightable_publishers and 'hl' in query:
+            is_api_traffic = request.headers.get("X-Access-Modality", "").lower() == "api"
+            if (unhighlightable_publishers or is_api_traffic) and 'hl' in query:
                 if 'publisher' not in query['fl']:
                     query['fl'] = query['fl'] + ',publisher'
                 should_postprocess_response = True
@@ -157,8 +158,23 @@ class SolrInterface(Resource):
 
     def postprocess_response(self, r: requests.Response, start_time: datetime.datetime, end_time: datetime.datetime) -> dict:
         response_data = r.json()
+        
+        is_api_traffic = request.headers.get("X-Access-Modality", "").lower() == "api"
+        
         unhighlightable_publishers = current_app.config.get('SOLR_SERVICE_DISALLOWED_HIGHLIGHTS_PUBLISHERS', [])
         unhighlightable_docs = []
+
+        def process_publisher(doc, publisher):
+            nonlocal is_api_traffic
+
+            if publisher.lower() in unhighlightable_publishers:
+                unhighlightable_docs.append(doc["id"])
+                return True
+
+            if is_api_traffic and publisher.lower() == "springer" and "abstract" in doc:
+                del doc["abstract"]
+
+            return False
 
         for doc in response_data['response']['docs']:
             if 'publisher' not in doc:
@@ -166,12 +182,10 @@ class SolrInterface(Resource):
 
             if type(doc['publisher']) is list:
                 for publisher in doc['publisher']:
-                    if publisher.lower() in unhighlightable_publishers:
-                        unhighlightable_docs.append(doc['id'])
+                    if process_publisher(doc, publisher):
                         break
             else:
-                if doc['publisher'].lower() in unhighlightable_publishers:
-                    unhighlightable_docs.append(doc['id'])
+                process_publisher(doc, doc['publisher'])
 
         for remove_doc in unhighlightable_docs:
             if remove_doc in response_data['highlighting']:
