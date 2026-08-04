@@ -161,11 +161,13 @@ class SolrInterface(Resource):
         unhighlightable_docs = []
 
         def process_publisher(doc, publisher):
+            nonlocal is_api_traffic
+
             if publisher.lower() in unhighlightable_publishers:
                 unhighlightable_docs.append(doc["id"])
                 return True
 
-            if publisher.lower() == "springer" and "abstract" in doc:
+            if is_api_traffic and publisher.lower() == "springer" and "abstract" in doc:
                 del doc["abstract"]
 
             return False
