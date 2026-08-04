@@ -1,5 +1,6 @@
 from __future__ import absolute_import
 
+import datetime
 import re
 
 from future import standard_library
@@ -15,7 +16,7 @@ except ImportError:
     # If solr service is not shipped with adsws, this will fail and it is ok
     pass
 import json
-from .models import Limits
+from .models import Limits, QueryLog
 from sqlalchemy import or_
 from werkzeug.datastructures import MultiDict
 from io import StringIO
@@ -70,7 +71,8 @@ class SolrInterface(Resource):
             handler_class += '_embedded_bigquery'
         handler = self.handler.get(handler_class, self.handler.get("default"))
 
-        should_postprocess_response = self.preprocess_request(handler, query)
+        should_postprocess_response = True
+        self.preprocess_request(handler, query)
 
         try:
             current_user_id = current_user.get_id()
@@ -80,6 +82,7 @@ class SolrInterface(Resource):
 
         current_app.logger.info("Dispatching 'POST' request to endpoint '{}' for user '{}'".format(current_app.config[self.handler[handler_class]], current_user_id or "anonymous"))
 
+        start_time = datetime.datetime.now(datetime.timezone.utc)
         if files and len(files): # must be directed to /bigquery
             r = requests.post(
                 current_app.config[handler],
@@ -95,16 +98,17 @@ class SolrInterface(Resource):
                 headers=headers,
                 cookies=SolrInterface.set_cookies(request),
             )
+        end_time = datetime.datetime.now(datetime.timezone.utc)
         current_app.logger.info("Received response from from endpoint '{}' with status code '{}'".format(current_app.config[handler], r.status_code))
 
         # Run this if we've identified a need to alter the response from Solr
         if should_postprocess_response and r.ok:
             try:
-                response_data = self.postprocess_response(r)
+                response_data = self.postprocess_response(r, start_time, end_time)
 
                 return json.dumps(response_data), r.status_code, r.headers
             except Exception as e:
-                current_app.logger.error(e.with_traceback())
+                current_app.logger.error(e)
 
         return r.text, r.status_code, r.headers
 
@@ -152,7 +156,7 @@ class SolrInterface(Resource):
 
         return should_postprocess_response
 
-    def postprocess_response(self, r: requests.Response) -> dict:
+    def postprocess_response(self, r: requests.Response, start_time: datetime.datetime, end_time: datetime.datetime) -> dict:
         response_data = r.json()
         
         is_api_traffic = request.headers.get("X-Access-Modality", "").lower() == "api"
@@ -191,24 +195,38 @@ class SolrInterface(Resource):
                     if remove_key in doc_highlights:
                         del doc_highlights[remove_key]
 
-        max_frag = current_app.config.get('SOLR_SERVICE_MAX_FRAGSIZE', 200)
-        for doc_id in list(response_data['highlighting'].keys()):
-            current_highlights = response_data['highlighting'][doc_id]
-            new_highlights = dict()
+        if 'highlighting' in response_data:
+            max_frag = current_app.config.get('SOLR_SERVICE_MAX_FRAGSIZE', 200)
+            for doc_id in list(response_data['highlighting'].keys()):
+                current_highlights = response_data['highlighting'][doc_id]
+                new_highlights = dict()
 
-            for field in current_highlights.keys():
-                new_highlights[field] = [
-                    windowed_highlight
-                    for highlight in current_highlights[field]
-                    for windowed_highlight in self.apply_highlight_window(highlight, max_frag)
-                ]
+                for field in current_highlights.keys():
+                    new_highlights[field] = [
+                        windowed_highlight
+                        for highlight in current_highlights[field]
+                        for windowed_highlight in self.apply_highlight_window(highlight, max_frag)
+                    ]
 
-            response_data['highlighting'][doc_id] = new_highlights
-        
-        for _, doc_highlights in response_data['highlighting'].items():
-            for field, highlights in list(doc_highlights.items()):
-                doc_highlights[field] = [highlight for highlight in highlights
-                                         if highlight is not None and str(highlight).strip() != ""]
+                response_data['highlighting'][doc_id] = new_highlights
+
+            for _, doc_highlights in response_data['highlighting'].items():
+                for field, highlights in list(doc_highlights.items()):
+                    doc_highlights[field] = [highlight for highlight in highlights
+                                             if highlight is not None and str(highlight).strip() != ""]
+
+        if 'allocatedBytes' in response_data:
+            query = response_data.get('responseHeader', {}).get('params', {}).get('q')
+            if query:
+                current_app.logger.info(f"Query: {query}, Allocated Bytes: {response_data['allocatedBytes']}")
+                with current_app.session_scope() as session:
+                    session.add(QueryLog(
+                        timestamp=start_time,
+                        query=query,
+                        allocated_bytes=response_data['allocatedBytes'],
+                        request_duration=end_time - start_time
+                    ))
+                    session.commit()
 
         response_data['filtered'] = 'true'
 
@@ -392,7 +410,6 @@ class SolrInterface(Resource):
                     payload[k] = max(0, min(_safe_int(v, default=max_hl), max_hl))
                 elif '.fragsize' in k:
                     payload[k] = max(1, min(_safe_int(v, default=max_frag), max_frag)) #0 would return whole field
-                    payload['hl.maxHighlightCharacters'] = payload[k]
             if k == 'hl.fl':
                 self._cleanup_fields(payload, k, current_app.config.get('SOLR_SERVICE_ALLOWED_HIGHLIGHTS_FIELDS'))
             if k == 'fl' or ('.fl' in k and k != 'hl.fl'):
