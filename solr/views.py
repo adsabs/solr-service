@@ -121,10 +121,9 @@ class SolrInterface(Resource):
                 if injected_param not in query.keys():
                     query[injected_param] = value
 
-        unhighlightable_publishers = current_app.config.get('SOLR_SERVICE_DISALLOWED_HIGHLIGHTS_PUBLISHERS', [])
         default_fields = current_app.config.get('SOLR_SERVICE_DEFAULT_FIELDS', [])
 
-        if default_fields and handler == 'SOLR_SERVICE_SEARCH_HANDLER':
+        if (default_fields or query['fl']) and handler == 'SOLR_SERVICE_SEARCH_HANDLER':
             if 'fl' not in query:
                 query['fl'] = ",".join(default_fields)
 
@@ -135,11 +134,10 @@ class SolrInterface(Resource):
                 if 'hl.q' not in query:
                     query['hl.q'] = query['q']
 
-            is_api_traffic = request.headers.get("X-Access-Modality", "").lower() == "api"
-            if (unhighlightable_publishers or is_api_traffic) and 'hl' in query:
-                if 'publisher' not in query['fl']:
-                    query['fl'] = query['fl'] + ',publisher'
-                should_postprocess_response = True
+            # Always request publisher information for postprocessing
+            if 'publisher' not in query['fl']:
+                query['fl'] = query['fl'] + ',publisher'
+            should_postprocess_response = True
 
         boost_type_map = current_app.config.get('SOLR_SERVICE_BOOST_TYPES', dict())
         if boost_type_map and 'boostType' in query:
