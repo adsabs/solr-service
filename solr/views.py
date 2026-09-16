@@ -121,10 +121,9 @@ class SolrInterface(Resource):
                 if injected_param not in query.keys():
                     query[injected_param] = value
 
-        unhighlightable_publishers = current_app.config.get('SOLR_SERVICE_DISALLOWED_HIGHLIGHTS_PUBLISHERS', [])
         default_fields = current_app.config.get('SOLR_SERVICE_DEFAULT_FIELDS', [])
 
-        if default_fields and handler == 'SOLR_SERVICE_SEARCH_HANDLER':
+        if (default_fields or query['fl']) and handler == 'SOLR_SERVICE_SEARCH_HANDLER':
             if 'fl' not in query:
                 query['fl'] = ",".join(default_fields)
 
@@ -135,10 +134,10 @@ class SolrInterface(Resource):
                 if 'hl.q' not in query:
                     query['hl.q'] = query['q']
 
-            if unhighlightable_publishers and 'hl' in query:
-                if 'publisher' not in query['fl']:
-                    query['fl'] = query['fl'] + ',publisher'
-                should_postprocess_response = True
+            # Always request publisher information for postprocessing
+            if 'publisher' not in query['fl']:
+                query['fl'] = query['fl'] + ',publisher'
+            should_postprocess_response = True
 
         boost_type_map = current_app.config.get('SOLR_SERVICE_BOOST_TYPES', dict())
         if boost_type_map and 'boostType' in query:
@@ -157,8 +156,23 @@ class SolrInterface(Resource):
 
     def postprocess_response(self, r: requests.Response, start_time: datetime.datetime, end_time: datetime.datetime) -> dict:
         response_data = r.json()
+        
+        is_api_traffic = request.headers.get("X-Access-Modality", "").lower() == "api"
+        
         unhighlightable_publishers = current_app.config.get('SOLR_SERVICE_DISALLOWED_HIGHLIGHTS_PUBLISHERS', [])
         unhighlightable_docs = []
+
+        def process_publisher(doc, publisher):
+            nonlocal is_api_traffic
+
+            if publisher.lower() in unhighlightable_publishers:
+                unhighlightable_docs.append(doc["id"])
+                return True
+
+            if is_api_traffic and publisher.lower() == "springer" and "abstract" in doc:
+                del doc["abstract"]
+
+            return False
 
         for doc in response_data['response']['docs']:
             if 'publisher' not in doc:
@@ -166,12 +180,10 @@ class SolrInterface(Resource):
 
             if type(doc['publisher']) is list:
                 for publisher in doc['publisher']:
-                    if publisher.lower() in unhighlightable_publishers:
-                        unhighlightable_docs.append(doc['id'])
+                    if process_publisher(doc, publisher):
                         break
             else:
-                if doc['publisher'].lower() in unhighlightable_publishers:
-                    unhighlightable_docs.append(doc['id'])
+                process_publisher(doc, doc['publisher'])
 
         for remove_doc in unhighlightable_docs:
             if remove_doc in response_data['highlighting']:
